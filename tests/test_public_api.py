@@ -18,7 +18,9 @@ import tracerax
 
 SUBMODULES = [
     "_typing",
+    "advect",
     "exceptions",
+    "particles",
 ]
 
 

@@ -72,6 +72,8 @@ plugins:
 nav:
   - Overview: index.md
   - Capability index: capabilities.md
+  - Particles: particles.md
+  - Advection: advect.md
   - Type aliases: typing.md
   - Exceptions: exceptions.md
 
