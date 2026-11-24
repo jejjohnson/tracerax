@@ -18,7 +18,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `_typing.py` | The `ScalarLike` type alias | now |
 | `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
 | `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
-| `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | Wave 1 ([#17](https://github.com/jejjohnson/tracerax/issues/17)) |
+| `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
 | `advect` | Deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | Wave 1 ([#18](https://github.com/jejjohnson/tracerax/issues/18), [#19](https://github.com/jejjohnson/tracerax/issues/19), [#20](https://github.com/jejjohnson/tracerax/issues/20), [#24](https://github.com/jejjohnson/tracerax/issues/24)); the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 | `bin` | Cells from edges, deposits, residence, concentrations | Wave 2 ([#21](https://github.com/jejjohnson/tracerax/issues/21), [#22](https://github.com/jejjohnson/tracerax/issues/22)) |
 | `footprint` | Surface footprints from backward runs | Wave 2 ([#23](https://github.com/jejjohnson/tracerax/issues/23)) |
@@ -60,7 +60,8 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 
 | You are about to write… | Use instead |
 |---|---|
-| A bilinear or trilinear read, `jnp.searchsorted` on a grid axis, `map_coordinates` | functax's `Linear().fit(RectilinearGrid(...), ...)` with `Policies` |
+| A bilinear or trilinear read, `jnp.searchsorted` on a grid axis, `map_coordinates` | functax's `Linear().fit(RectilinearGrid(...), ...)` with `Policies`; for one field per position column, `fit_components` and `read_components` (`tracerax._src.velocity.gridded`) |
+| A check of a count, of the position columns, or of whether a value is traced | `check_count`, `check_dimension`, `is_concrete` (`tracerax._src._validate`) |
 | `jnp.histogram`, `segment_sum` into cells, a deposit, a cloud-in-cell weight | functax's `Binning` |
 | A cell area or volume from edges | `functax.quad.cell_area` |
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
@@ -240,7 +241,7 @@ These are the `karpathy-coding-principles` skill in four lines. When you suggest
 Its JAX/Equinox rules apply in full:
 
 - **Layout.** Logic lives only under `tracerax/_src/`; a public module only re-exports. One concept per file: a protocol and its implementations share a file.
-- **Types and shapes.** Every array argument and return is annotated with jaxtyping and named dims; shapes live in types, never in comments. Dims come from the shared vocabulary of `python-style`, and tracerax adds `particle`, `axis` (the 2 or 3 position columns), `step` and `save`.
+- **Types and shapes.** Every array argument and return is annotated with jaxtyping and named dims; shapes live in types, never in comments. Dims come from the shared vocabulary of `python-style`, and tracerax adds `particle`, `axis` (the 2 or 3 position columns), `term`, `step` and `save`.
 - **Array operations.** einx instead of `axis=`, `.T`, `reshape` and `[:, None]`.
 - **Modules.** Arrays live in `eqx.Module`s and are always leaves, never static fields. Fixed parameters are fields; variables are arguments of `__call__`.
 - **Keys** are keyword-only, named `key`, last, and split once at the top.
