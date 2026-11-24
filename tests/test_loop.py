@@ -18,6 +18,8 @@ from _oracles import (
     uniform_wind_position,
 )
 from _sampling import assert_mean, assert_uniform, assert_variance
+from functax.geometry import Axis, RectilinearGrid
+from functax.interp import Policies
 from integrix.adjoint import Checkpointed, Truncated
 
 from tracerax import ValidationError
@@ -301,12 +303,97 @@ class TestReleases:
         ):
             integrate(state, step, t0=times["t0"], duration=600.0, step_size=30.0)
 
+    @pytest.mark.parametrize(
+        ("days", "step_size"), [(1.0, 0.7 * 8), (30.0, 33.3 * 8), (365.0, 330.0)]
+    )
+    def test_float32_loses_no_time_on_a_long_run(
+        self, days: float, step_size: float
+    ) -> None:
+        """s + Δt − s is not Δt in float32 once s is large."""
+        state = at_point(jnp.zeros(2, jnp.float32), 1)
+        duration = days * 86_400.0
+
+        class Total(eqx.Module):
+            def init(self) -> jax.Array:
+                return jnp.zeros(1, jnp.float64)
+
+            def update(self, total: jax.Array, state: Any, duration: jax.Array):
+                return total + duration
+
+        result = integrate(
+            state,
+            Deterministic(uniform(jnp.zeros(2))),
+            t0=0.0,
+            duration=duration,
+            step_size=step_size,
+            accumulate=Total(),
+        )
+        # each step rounds once, to 6e-8 relative
+        assert_matches_oracle(result.accumulated[0], duration, rtol=1e-7)
+
+    def test_a_float64_release_time_of_a_float32_state(self) -> None:
+        state = at_point(jnp.zeros(2, jnp.float32), 1)
+        state = eqx.tree_at(lambda s: s.release_time, state, jnp.array([13.0]))
+        step = Deterministic(uniform(jnp.array([2.0, 0.0])))
+        result = integrate(state, step, t0=0.0, duration=100.0, step_size=10.0)
+        assert result.state.position.dtype == jnp.float32
+        assert_matches_oracle(result.state.position[0, 0], 174.0, rtol=1e-6)
+
     def test_float64_is_not(self) -> None:
         state = at_point(jnp.zeros(2), 1, release_time=1.7e9 + 13.0)
         step = Deterministic(uniform(jnp.array([2.0, 0.0])))
         result = integrate(state, step, t0=1.7e9, duration=600.0, step_size=30.0)
         # the times themselves round to 2e-7 s
         assert_matches_oracle(result.state.position[0, 0], 1174.0, rtol=0, atol=1e-6)
+
+
+class TestReleaseGradients:
+    """A release on a step time is where a maximum and a clip would tie."""
+
+    OPTIONS = {"duration": 10.0, "step_size": 5.0}  # noqa: RUF012
+    CUBIC = Deterministic(uniform_in_space(lambda t: jnp.array([t**3, 0.0])))
+
+    @staticmethod
+    def _end(step: Any, t0: Any, release: Any, **options: Any) -> jax.Array:
+        state = _released_at(at_point(jnp.zeros(2), 1), release)
+        return integrate(state, step, t0=t0, **options).state.position[0, 0]
+
+    @pytest.mark.parametrize("release", [3.0, 5.0, 7.0])
+    @pytest.mark.parametrize("direction", [1.0, -1.0])
+    def test_in_the_release_time(self, release: float, direction: float) -> None:
+        options = {"duration": direction * 10.0, "step_size": 5.0}
+
+        def end(wait: jax.Array) -> jax.Array:
+            return self._end(self.CUBIC, 2.0, 2.0 + direction * wait, **options)
+
+        # x = ∫ t³ dt from t_r = 2 + d w to 2 + 10 d, so dx/dw = −d t_r³
+        expected = -direction * (2.0 + direction * release) ** 3
+        for mode in (jax.grad, jax.jacfwd):
+            assert_matches_oracle(
+                mode(end)(jnp.asarray(release)), expected, rtol=1e-12, atol=1e-12
+            )
+
+    def test_in_the_start_time(self) -> None:
+        # released before the run: dx/dt₀ = (t₀ + 10)³ − t₀³
+        for release, expected in ((-1.0, 1000.0), (0.0, 1000.0)):
+            gradient = jax.grad(
+                lambda t0, r=release: self._end(self.CUBIC, t0, r + t0, **self.OPTIONS)
+            )(jnp.asarray(0.0))
+            assert_matches_oracle(gradient, expected, rtol=1e-12)
+
+    def test_of_a_sum(self) -> None:
+        """The time a particle has moved for is T − r."""
+
+        def moved(release: jax.Array) -> jax.Array:
+            state = _released_at(at_point(jnp.zeros(2), 1), release)
+            result = integrate(
+                state, self.CUBIC, t0=0.0, accumulate=Moving(1), **self.OPTIONS
+            )
+            return result.accumulated["elapsed"][0]
+
+        for release in (2.0, 5.0):
+            gradient = jax.grad(moved)(jnp.asarray(release))
+            assert_matches_oracle(gradient, -1.0, rtol=1e-14)
 
 
 class TestDeterministicUnderTheLoop:
@@ -367,6 +454,50 @@ class TestDomain:
         )
         assert_matches_oracle(
             result.accumulated["elapsed"], [6.0, 6.0, 5.0, 3.0, 1.0], rtol=1e-14
+        )
+
+    @pytest.mark.parametrize("duration", [3.0, 0.0])
+    def test_a_particle_that_starts_outside_never_moves(self, duration: float) -> None:
+        """It would move back in, in a wind of 2 m/s."""
+        state = along_line(jnp.array([-2.0, 0.0]), jnp.array([2.0, 0.0]), 2)
+        step, box = Deterministic(uniform(jnp.array([2.0, 0.0]))), Box([0, -1], [9, 1])
+        result = integrate(
+            state, step, t0=0.0, duration=duration, step_size=1.0, domain=box
+        )
+        assert_matches_oracle(result.state.active, [False, True], rtol=0.0)
+        assert_matches_oracle(
+            result.state.position[:, 0], [-1.0, 1.0 + 2.0 * duration], rtol=1e-14
+        )
+        if duration:
+            final, _ = deterministic(
+                state, step.velocity, t0=0.0, duration=3.0, n_steps=3, domain=box
+            )
+            assert_matches_oracle(final.position, result.state.position, rtol=1e-12)
+            assert_matches_oracle(final.active, result.state.active, rtol=0.0)
+
+    def test_a_particle_that_reads_outside_the_data_stays_finite(self) -> None:
+        nodes = jnp.linspace(0.0, 10.0, 5)
+        axes = (Axis(jnp.array([0.0, 9.0])), Axis(nodes), Axis(nodes))
+        grid, field = RectilinearGrid(axes), jnp.ones((2, 5, 5))
+        velocity = GriddedVelocity.fit(
+            (grid, grid), (field, 0.0 * field), policies=Policies(outside="nan")
+        )
+        state = along_line(jnp.array([2.0, 5.0]), jnp.array([11.0, 5.0]), 3)
+        result = integrate(
+            state,
+            Deterministic(velocity),
+            t0=0.0,
+            duration=4.0,
+            step_size=1.0,
+            domain=Box([0.0, 0.0], [10.0, 10.0]),
+            accumulate=Moving(3),
+        )
+        assert bool(jnp.isfinite(result.state.position).all())
+        # from 3.5, 6.5 and 9.5: the last would read past 10 in its first step
+        assert_matches_oracle(result.state.position[:, 0], [7.5, 9.5, 9.5], rtol=1e-12)
+        assert_matches_oracle(result.state.active, [True, False, False], rtol=0.0)
+        assert_matches_oracle(
+            result.accumulated["elapsed"], [4.0, 3.0, 0.0], rtol=1e-14
         )
 
     def test_an_inactive_particle_does_not_change_the_others(self) -> None:

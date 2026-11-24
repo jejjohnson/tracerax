@@ -66,6 +66,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | A cell area or volume from edges | `functax.quad.cell_area` |
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
+| A `where` on the result of a field read at a masked particle | `stand_in` before the read and `choose` after it (`tracerax._src.advect.masks`) |
 | A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
 | A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`) |
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |

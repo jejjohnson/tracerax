@@ -15,6 +15,7 @@ from jaxtyping import Array, Float
 
 from tracerax._src._validate import check_count, is_concrete
 from tracerax._src.advect.domain import Box
+from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.uniform import Velocity
 from tracerax._typing import ScalarLike
@@ -48,8 +49,12 @@ class _ReleasedTime(eqx.Module):
         """
         begin = jnp.minimum(self.direction * t0, self.direction * t1)
         end = jnp.maximum(self.direction * t0, self.direction * t1)
-        # δ_p = clip(end − max(begin, r_p), 0, end − begin)
-        elapsed = jnp.clip(end - jnp.maximum(begin, self.release), 0.0, end - begin)
+        # δ_p = clip(end − max(begin, r_p), 0, end − begin), by branches: a tie
+        # would split the gradient in r_p
+        length = end - begin
+        remaining = length - (self.release - begin)
+        partial = jnp.where(remaining > 0.0, remaining, 0.0)
+        elapsed = jnp.where(self.release >= begin, partial, length)
         return jnp.sign(t1 - t0) * elapsed
 
 
@@ -81,27 +86,39 @@ def _check_run(duration: float, n_steps: int, t0: ScalarLike) -> None:
         raise ValidationError(f"'t0' must be a scalar, got shape {jnp.shape(t0)}")
 
 
+_RELEASE_MESSAGE = (
+    "'release_time' must lie on the step times of a deterministic solve; use "
+    "Deterministic under the loop for a release inside a step"
+)
+
+
 def _check_releases(
     release_time: Float[Array, " particle"],
-    t0: ScalarLike,
+    start_time: Float[Array, ""],
     direction: float,
     step_size: float,
-) -> None:
-    """Raise when a concrete release time is inside a step.
+    n_steps: int,
+) -> Float[Array, " particle"]:
+    """The release times, checked to lie on the step times of the run.
+
+    A release before the start or after the end is on no step. The tolerance is
+    1e-6 of a step, and the rounding of the times in their dtype.
 
     Raises:
-        ValidationError: If one is not, to 1e-6 of a step, on a step time.
+        ValidationError: If a concrete one is inside a step.
+        EquinoxRuntimeError: If a traced one is.
     """
-    if not is_concrete(release_time, t0):
-        return
-    steps = direction * (np.asarray(release_time, np.float64) - float(t0)) / step_size
-    # a release before the start, or after the end, is on no step
-    inside = np.maximum(steps, 0.0)
-    if (np.abs(inside - np.round(inside)) > 1e-6).any():
-        raise ValidationError(
-            "'release_time' must lie on the step times of a deterministic solve; "
-            "use Deterministic under the loop for a release inside a step"
-        )
+    xp = np if is_concrete(release_time, start_time) else jnp
+    times, start = xp.asarray(release_time), xp.asarray(start_time)
+    steps = xp.clip(direction * (times - start) / step_size, 0.0, float(n_steps))
+    largest = xp.maximum(xp.abs(times), xp.abs(start))
+    tolerance = 1e-6 + 4.0 * xp.spacing(largest) / step_size
+    inside = xp.abs(steps - xp.round(steps)) > tolerance
+    if xp is jnp:
+        return eqx.error_if(release_time, inside, _RELEASE_MESSAGE)
+    if inside.any():
+        raise ValidationError(_RELEASE_MESSAGE)
+    return release_time
 
 
 def _check_saves(save_at: Float[Array, " save"], duration: float) -> None:
@@ -114,11 +131,30 @@ def _check_saves(save_at: Float[Array, " save"], duration: float) -> None:
     if not is_concrete(save_at):
         return
     offsets = math.copysign(1.0, duration) * np.asarray(save_at)
-    inside = (offsets >= 0.0) & (offsets <= abs(duration))
+    # the duration as the offsets see it
+    last = np.asarray(abs(duration), dtype=offsets.dtype)
+    inside = (offsets >= 0.0) & (offsets <= last)
     if not inside.all() or (np.diff(offsets) < 0.0).any():
         raise ValidationError(
             f"'save_at' must hold offsets from 0 to {duration}, in that order, "
             f"got {np.asarray(save_at)}"
+        )
+
+
+def _check_tableau(solver: dfx.AbstractSolver) -> None:
+    """Raise when a particle could stop inside a domain for ever.
+
+    Such a solver gives its first stage no weight, so a particle whose other
+    stages are outside does not move.
+
+    Raises:
+        ValidationError: If the solver's first weight is 0.
+    """
+    tableau = getattr(solver, "tableau", None)
+    if isinstance(tableau, dfx.ButcherTableau) and tableau.b_sol[0] == 0.0:
+        raise ValidationError(
+            f"'solver' {type(solver).__name__} gives its first stage no weight, so a "
+            "particle could stop inside 'domain'; use another, such as RK4Classic"
         )
 
 
@@ -143,6 +179,9 @@ def deterministic(
         1. Integrate the positions over the offsets s from 0 to ``duration``,
            with the right-hand side u(t₀ + s, x), in ``n_steps`` equal steps.
         2. Give each particle the time it has been released for as its own clock.
+           The stages are evaluated at the step's own times, so the gradient in a
+           release time is exact for a steady velocity only; `Deterministic` under
+           the loop gives it for any.
         3. Set ``active`` to false outside the domain.
 
     Args:
@@ -158,7 +197,8 @@ def deterministic(
         save_at: The offsets from ``t0`` to save the positions at, signed like
             ``duration`` and in the run's order; ``None`` saves none. Between
             step times they are the solver's interpolation.
-        domain: The box a particle stops outside of, crossed at first order.
+        domain: The box a particle stops outside of, crossed at first order. A
+            solver whose first stage has no weight is refused with one.
         adjoint: The diffrax adjoint. Forward mode needs
             ``diffrax.ForwardMode()``.
 
@@ -166,9 +206,10 @@ def deterministic(
         The final state, and the positions at ``save_at`` or ``None``.
 
     Raises:
-        ValidationError: If ``duration`` is 0, ``n_steps`` is below 1, or a
-            concrete release time is inside a step or a concrete save offset
-            outside the run.
+        ValidationError: If ``duration`` is 0, ``n_steps`` is below 1, a concrete
+            release time is inside a step, a concrete save offset is outside the
+            run, or the solver's first stage has no weight and there is a domain.
+        EquinoxRuntimeError: If a traced release time is inside a step.
 
     Examples:
         A uniform wind, 10 s forward, saved half way:
@@ -203,9 +244,21 @@ def deterministic(
     """
     _check_run(duration, n_steps, t0)
     direction = math.copysign(1.0, duration)
-    _check_releases(state.release_time, t0, direction, abs(duration) / n_steps)
     dtype = state.position.dtype
     start_time = jnp.asarray(t0, dtype=dtype)
+    release_time = _check_releases(
+        state.release_time.astype(dtype),
+        start_time,
+        direction,
+        abs(duration) / n_steps,
+        n_steps,
+    )
+    starts_inside = state.active
+    if domain is not None:
+        _check_tableau(solver)
+        starts_inside = starts_inside & domain.contains(state.position)
+    # where the velocity is read for a particle that does not move
+    reference = state.position[jnp.argmax(starts_inside)]
 
     def vector_field(
         offset: ScalarLike, position: Float[Array, "particle axis"], args: Any
@@ -215,16 +268,12 @@ def deterministic(
         moving = state.active
         if domain is not None:
             moving = moving & domain.contains(position)
+        rate = velocity(time, stand_in(position, moving, reference))
         # 1_p u(t₀ + s, x)
-        return einx.where(
-            "particle, particle axis, -> particle axis",
-            moving,
-            velocity(time, position),
-            jnp.zeros((), dtype=dtype),
-        )
+        return choose(moving, rate, jnp.zeros_like(position))
 
     # r_p = d (t_{r,p} − t₀)
-    release = direction * (state.release_time - start_time)
+    release = direction * (release_time - start_time)
     term = _PerParticleTerm(vector_field, _ReleasedTime(release, direction))
     offsets = jnp.asarray(np.linspace(0.0, duration, n_steps + 1), dtype=dtype)
     if save_at is None:
@@ -323,7 +372,9 @@ class Deterministic(eqx.Module):
         del noise
         # __check_init__ refuses any other solver
         tableau = cast(dfx.ButcherTableau, self.solver.tableau)
-        position = state.position
+        moves = state.active & (duration > 0.0)
+        position = stand_in(state.position, moves)
+        dtype = position.dtype
         times = [float(tableau.c1), *(float(c) for c in tableau.c)]
 
         def combine(
@@ -343,18 +394,11 @@ class Deterministic(eqx.Module):
         for index, fraction in enumerate(times):
             before = [] if index == 0 else tableau.a_lower[index - 1]
             # k_i = u(t + d c_i δ, x + d δ ∑_{j<i} a_ij k_j)
-            stages.append(
-                self.velocity(
-                    start + direction * fraction * duration, combine(before, stages)
-                )
+            rate = self.velocity(
+                start + direction * fraction * duration, combine(before, stages)
             )
+            stages.append(rate.astype(dtype))
         # x ← x + d δ ∑_i b_i k_i
         moved = combine(tableau.b_sol, stages)
-        moves = state.active & (duration > 0.0)
-        position = einx.where(
-            "particle, particle axis, particle axis -> particle axis",
-            moves,
-            moved,
-            position,
-        )
+        position = choose(moves, moved, state.position)
         return eqx.tree_at(lambda particles: particles.position, state, position)

@@ -9,6 +9,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from tracerax._src.advect.diffusivity import Diffusivity
+from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.uniform import Velocity
@@ -103,14 +104,13 @@ def displacement_step(
         >>> bool(jnp.allclose(moved.position, jnp.array([[1.0, 0.0], [0.0, 0.0]])))
         True
     """
-    position = state.position
-    dtype = position.dtype
-    if walls is not None and position.shape[-1] != 3:
+    dtype, dim = state.position.dtype, state.position.shape[-1]
+    if walls is not None and dim != 3:
         raise ValidationError(
-            "'walls' reflect the third position column, and 'state' has "
-            f"{position.shape[-1]}"
+            f"'walls' reflect the third position column, and 'state' has {dim}"
         )
     moves = state.active & (duration > 0.0)
+    position = stand_in(state.position, moves)
     # a particle that waits keeps finite gradients
     elapsed = jnp.where(moves, duration, 1.0)
     waiting = jnp.zeros((), dtype=dtype)
@@ -137,12 +137,7 @@ def displacement_step(
     if walls is not None:
         height, _ = walls.reflect(moved[:, 2], jnp.zeros_like(moved[:, 2]))
         moved = moved.at[:, 2].set(height)
-    chosen = einx.where(
-        "particle, particle axis, particle axis -> particle axis",
-        moves,
-        moved.astype(dtype),
-        position,
-    )
+    chosen = choose(moves, moved, state.position)
     return eqx.tree_at(lambda particles: particles.position, state, chosen)
 
 
@@ -224,7 +219,8 @@ class RandomDisplacement(eqx.Module):
         # the physical start of the interval, in both directions
         time = jnp.minimum(start, start + direction * duration)
         # d u(t, x)
-        mean = direction * self.velocity(time, state.position)
+        moves = state.active & (duration > 0.0)
+        mean = direction * self.velocity(time, stand_in(state.position, moves))
         return displacement_step(
             state, mean, self.diffusivity, time, duration, noise, walls=self.walls
         )

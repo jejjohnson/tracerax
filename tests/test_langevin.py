@@ -72,9 +72,10 @@ class TestTurbulenceModel:
 
 
 class TestWalls:
+    # XLA compares a subnormal height as 0
     @given(
-        height=st.floats(-1e4, 1e4),
-        bottom=st.floats(-100.0, 100.0),
+        height=st.floats(-1e4, 1e4, allow_subnormal=False),
+        bottom=st.floats(-100.0, 100.0, allow_subnormal=False),
         depth=st.floats(1.0, 1e3),
     )
     def test_the_fold_is_the_triangle_wave(
