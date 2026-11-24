@@ -19,7 +19,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
 | `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
-| `advect` | The deterministic solve and step, the domain, the Langevin step, the `TurbulenceModel` protocol and the walls; the random-displacement step and the loop that runs any step to come | now, growing in Wave 1 ([#20](https://github.com/jejjohnson/tracerax/issues/20), [#24](https://github.com/jejjohnson/tracerax/issues/24)); the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `advect` | The deterministic solve and step, the domain, the Langevin step, the `TurbulenceModel` protocol, the walls, and the loop that runs any step; the random-displacement step to come | now, growing in Wave 1 ([#24](https://github.com/jejjohnson/tracerax/issues/24)); the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 | `bin` | Cells from edges, deposits, residence, concentrations | Wave 2 ([#21](https://github.com/jejjohnson/tracerax/issues/21), [#22](https://github.com/jejjohnson/tracerax/issues/22)) |
 | `footprint` | Surface footprints from backward runs | Wave 2 ([#23](https://github.com/jejjohnson/tracerax/issues/23)) |
 | `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
@@ -66,7 +66,9 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | A cell area or volume from edges | `functax.quad.cell_area` |
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
-| A second loop for a new kind of particle | a `ParticleStep`; the one loop runs any of them |
+| A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
+| A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`) |
+| `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
 | A hand-written Earth radius or a great-circle distance | geophysix (from Wave 3) |
