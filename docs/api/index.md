@@ -6,9 +6,9 @@ The public API is the set of public modules below, plus the exceptions that `tra
 
 | Module | Contents | Status |
 |---|---|---|
-| `tracerax.particles` | The particle state, the step protocol, seeding at points, along lines and over boxes | Wave 1 |
+| [`tracerax.particles`](particles.md) | The particle state, the step protocol, seeding at points, along lines and over boxes | available |
 | `tracerax.velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | Wave 1 |
-| `tracerax.advect` | Deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | Wave 1 |
+| [`tracerax.advect`](advect.md) | Deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | Wave 1 |
 | `tracerax.bin` | Cells from edges, deposits that conserve mass at walls, residence, concentrations | Wave 2 |
 | `tracerax.footprint` | Surface footprints from backward runs | Wave 2 |
 | `tracerax.analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill; the sphere and inertial particles join `advect` | Wave 3 |

@@ -116,7 +116,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E402", "E721", "E731", "E741", "F722", "RUF022", "UP037"]
 # Docstrings and comments carry Unicode maths (eman-style-math, "Maths
 # notation" in AGENTS.md), so the maths glyphs that look like ASCII are allowed.
-allowed-confusables = ["–", "−", "′", "×", "∗", "∣", "α", "γ", "ι", "ν", "ο", "ρ", "σ", "υ", "ℓ", "𝒩"]
+allowed-confusables = ["–", "−", "′", "×", "∗", "∣", "α", "γ", "ι", "ν", "ο", "ρ", "σ", "υ", "ℓ", "𝒩", "𝒰"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

@@ -6,7 +6,7 @@ disperses, what it leaves in a cell, and which surface a receptor saw.
 
 ## Modules
 
-Each is created by its first feature issue; none is built yet.
+Each is created by its first feature issue, so the later ones may not be here yet.
 
 | Module | What it gives you |
 |---|---|

@@ -20,7 +20,7 @@ uv run poe install
 
 ## Status
 
-The package has its scaffold, and no public module is built yet. The [API overview](https://jejjohnson.github.io/tracerax/reference/) lists the modules and the wave that builds each.
+The [API overview](https://jejjohnson.github.io/tracerax/reference/) lists the modules, which of them are built, and the wave that builds each of the others.
 
 ## Design rules
 

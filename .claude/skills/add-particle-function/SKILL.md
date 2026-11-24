@@ -21,7 +21,7 @@ Private code goes in `src/tracerax/_src/<module>/<topic>.py`; the public module 
 ## 3. Write it
 
 - Pure functions and `eqx.Module`s; arrays are leaves, configuration is `eqx.field(static=True)`. Never call `jax.jit`.
-- Every array is annotated with jaxtyping and named dims (`Float[Array, "particle dim"]`); einx instead of `axis=`, `.T`, `reshape` and `[:, None]`.
+- Every array is annotated with jaxtyping and named dims (`Float[Array, "particle axis"]`); einx instead of `axis=`, `.T`, `reshape` and `[:, None]`.
 - **Units**: SI, stated in `Args:` and `Returns:`. Positions are metres in a local frame, with columns (x, y) or (x, y, z); a gridded velocity keeps (time, z, y, x).
 - **Masks**: a particle that is inactive or not yet released is unchanged and finite. Replace its value through `where` before the arithmetic, so that its gradient is finite too.
 - **Time**: offsets from a traced `t0` over a static signed `duration`. Write down what a negative duration does.

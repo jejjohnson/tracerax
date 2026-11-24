@@ -17,7 +17,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 |---|---|---|
 | `_typing.py` | The `ScalarLike` type alias | now |
 | `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
-| `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | Wave 1 ([#16](https://github.com/jejjohnson/tracerax/issues/16)) |
+| `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | Wave 1 ([#17](https://github.com/jejjohnson/tracerax/issues/17)) |
 | `advect` | Deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | Wave 1 ([#18](https://github.com/jejjohnson/tracerax/issues/18), [#19](https://github.com/jejjohnson/tracerax/issues/19), [#20](https://github.com/jejjohnson/tracerax/issues/20), [#24](https://github.com/jejjohnson/tracerax/issues/24)); the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 | `bin` | Cells from edges, deposits, residence, concentrations | Wave 2 ([#21](https://github.com/jejjohnson/tracerax/issues/21), [#22](https://github.com/jejjohnson/tracerax/issues/22)) |
@@ -240,7 +240,7 @@ These are the `karpathy-coding-principles` skill in four lines. When you suggest
 Its JAX/Equinox rules apply in full:
 
 - **Layout.** Logic lives only under `tracerax/_src/`; a public module only re-exports. One concept per file: a protocol and its implementations share a file.
-- **Types and shapes.** Every array argument and return is annotated with jaxtyping and named dims; shapes live in types, never in comments. Dims come from the shared vocabulary of `python-style`, and tracerax adds `particle`, `dim` (the 2 or 3 position columns) and `save`.
+- **Types and shapes.** Every array argument and return is annotated with jaxtyping and named dims; shapes live in types, never in comments. Dims come from the shared vocabulary of `python-style`, and tracerax adds `particle`, `axis` (the 2 or 3 position columns), `step` and `save`.
 - **Array operations.** einx instead of `axis=`, `.T`, `reshape` and `[:, None]`.
 - **Modules.** Arrays live in `eqx.Module`s and are always leaves, never static fields. Fixed parameters are fields; variables are arguments of `__call__`.
 - **Keys** are keyword-only, named `key`, last, and split once at the top.
