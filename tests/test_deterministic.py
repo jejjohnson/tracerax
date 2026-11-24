@@ -283,7 +283,8 @@ class TestDeterministic:
             state,
             uniform(jnp.ones(2)),
             t0=0.0,
-            duration=0.1,
+            # NumPy compares a float32 with this in float64
+            duration=np.float64(0.1),
             n_steps=3,
             save_at=jnp.array([0.1], jnp.float32),
         )
