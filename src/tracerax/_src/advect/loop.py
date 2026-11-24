@@ -1,0 +1,383 @@
+"""The integration loop: it runs any particle step over a duration."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable
+from typing import Any, Protocol, runtime_checkable
+
+import einx
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import numpy as np
+from integrix.adjoint import (
+    Checkpointed,
+    Truncated,
+    checkpointed_scan,
+    truncated_scan,
+)
+from jaxtyping import Array, Float, PRNGKeyArray, PyTree
+
+from tracerax._src._validate import check_count, is_concrete
+from tracerax._src.advect.domain import Box
+from tracerax._src.particles.state import ParticleState
+from tracerax._src.particles.step import ParticleStep
+from tracerax._typing import ScalarLike
+from tracerax.exceptions import ValidationError
+
+
+__all__ = [
+    "Accumulator",
+    "Result",
+    "integrate",
+    "n_steps_for_horizon",
+    "step_durations",
+]
+
+
+@runtime_checkable
+class Accumulator(Protocol):
+    """What a run sums: a run of many steps then stores sums and no trajectory.
+
+    Any object with these two methods is one.
+
+    Examples:
+        The time each particle has spent moving:
+
+        >>> import equinox as eqx
+        >>> import jax.numpy as jnp
+        >>> from tracerax.advect import Accumulator
+        >>> class Elapsed(eqx.Module):
+        ...     size: int
+        ...
+        ...     def init(self):
+        ...         return jnp.zeros(self.size)
+        ...
+        ...     def update(self, total, state, duration):
+        ...         return total + duration
+        >>> isinstance(Elapsed(4), Accumulator)
+        True
+    """
+
+    def init(self) -> PyTree:
+        """The total before the first step."""
+        ...
+
+    def update(
+        self,
+        total: PyTree,
+        state: ParticleState,
+        duration: Float[Array, " particle"],
+    ) -> PyTree:
+        """The total with one step's contribution added.
+
+        Args:
+            total: The total so far.
+            state: The state after the move.
+            duration: δ, how long each particle moved for in this step [s], and 0
+                for one that did not move.
+
+        Returns:
+            The new total, of the same structure, shapes and dtypes.
+        """
+        ...
+
+
+class Result(eqx.Module):
+    """What `integrate` returns.
+
+    Attributes:
+        state: The state at the end of the run.
+        accumulated: The accumulator's total, or ``None`` without one.
+        trajectory: The positions of the input state and of every
+            ``save_every``-th one after it, or ``None``.
+        offsets: The offsets from ``t0`` they were saved at, signed like
+            ``duration`` [s], or ``None``.
+    """
+
+    state: ParticleState
+    accumulated: PyTree
+    trajectory: Float[Array, "save particle axis"] | None
+    offsets: Float[Array, " save"] | None
+
+
+def n_steps_for_horizon(horizon: float, step_size: float) -> int:
+    """K = ⌈T/Δt⌉, snapped to the nearest integer within 1e-9 relative.
+
+    Plain ⌈T/Δt⌉ adds a step of zero length when the quotient is an integer that
+    floating point rounds just above: 2.1 / 0.15 is 14 steps and not 15.
+
+    Examples:
+        >>> n_steps_for_horizon(2.1, 0.15), n_steps_for_horizon(122.0, 5.0)
+        (14, 25)
+        >>> n_steps_for_horizon(0.0, 5.0)
+        0
+    """
+    quotient = horizon / step_size
+    nearest = round(quotient)
+    if abs(quotient - nearest) <= 1e-9 * max(1.0, nearest):
+        # a horizon much shorter than the step is still one step
+        return nearest if horizon == 0.0 else max(nearest, 1)
+    return math.ceil(quotient)
+
+
+def step_durations(horizon: float, step_size: float, n_steps: int) -> np.ndarray:
+    """The K step lengths: Δt, and T − (K − 1) Δt for the last.
+
+    Examples:
+        >>> step_durations(12.0, 5.0, 3).tolist()
+        [5.0, 5.0, 2.0]
+    """
+    durations = np.full(n_steps, step_size, dtype=np.float64)
+    if n_steps:
+        # Δt_K = T − (K − 1) Δt
+        durations[-1] = horizon - step_size * (n_steps - 1)
+    return durations
+
+
+def _check_run(duration: Any, step_size: Any, t0: Any) -> None:
+    """Raise unless the duration and the step are static, finite numbers."""
+    for name, value in (("duration", duration), ("step_size", step_size)):
+        if not is_concrete(value) or not math.isfinite(value):
+            raise ValidationError(f"'{name}' must be a finite number, got {value}")
+    if step_size <= 0.0:
+        raise ValidationError(f"'step_size' must be positive, got {step_size}")
+    if jnp.shape(t0) != ():
+        raise ValidationError(f"'t0' must be a scalar, got shape {jnp.shape(t0)}")
+
+
+def _check_epoch(values: Any, name: str, step_size: float, dtype: Any) -> None:
+    """Raise when concrete times are too coarse in the positions' dtype.
+
+    Raises:
+        ValidationError: If their spacing is more than a hundredth of a step.
+    """
+    if not is_concrete(values):
+        return
+    largest = np.max(np.abs(np.asarray(values, dtype=np.float64)), initial=0.0)
+    spacing = float(np.spacing(np.asarray(largest, dtype=dtype)))
+    if spacing > step_size / 100.0:
+        raise ValidationError(
+            f"'{name}' is too far from its epoch: {dtype} resolves {spacing:.3g} s at "
+            f"{largest:.6g} s, and 'step_size' is {step_size:g} s; count times from "
+            "an epoch near the run"
+        )
+
+
+def _noise_source(
+    step: ParticleStep,
+    state: ParticleState,
+    key: PRNGKeyArray | None,
+    noise: Float[Array, "..."] | None,
+    n_steps: int,
+) -> tuple[Any, Callable[[Any], Float[Array, "..."] | None]]:
+    """What to scan over for the noise, and how to read one step's from it.
+
+    Raises:
+        ValidationError: If both or neither of ``key`` and ``noise`` are given
+            for a step with noise, either is given for a step without, or the
+            noise has another shape.
+    """
+    shape = step.noise_shape(state)
+    if shape is None:
+        if key is not None or noise is not None:
+            raise ValidationError(
+                "'key' and 'noise' must both be None for a step without noise"
+            )
+        return None, lambda draw: None
+    dtype = state.position.dtype
+    if noise is not None and key is None:
+        if noise.shape != (n_steps, *shape):
+            raise ValidationError(
+                f"'noise' must have one array of shape {shape} per step, "
+                f"{(n_steps, *shape)}, got shape {noise.shape}"
+            )
+        return noise.astype(dtype), lambda draw: draw
+    if key is None or noise is not None:
+        raise ValidationError(
+            "exactly one of 'key' and 'noise' must be given for a step with noise"
+        )
+    keys = jax.random.split(key, n_steps)
+    return keys, lambda draw: jax.random.normal(draw, shape, dtype=dtype)
+
+
+def _scan(adjoint: Checkpointed | Truncated | None) -> Callable[..., Any]:
+    """The scan of an adjoint."""
+    if adjoint is None:
+        return jax.lax.scan
+    if isinstance(adjoint, Checkpointed):
+        return lambda f, init, xs: checkpointed_scan(f, init, xs, every=adjoint.every)
+    return lambda f, init, xs: truncated_scan(f, init, xs, k=adjoint.k)
+
+
+def integrate(
+    state: ParticleState,
+    step: ParticleStep,
+    *,
+    t0: ScalarLike,
+    duration: float,
+    step_size: float,
+    key: PRNGKeyArray | None = None,
+    noise: Float[Array, "step ..."] | None = None,
+    domain: Box | None = None,
+    accumulate: Accumulator | None = None,
+    save_every: int | None = None,
+    adjoint: Checkpointed | Truncated | None = None,
+) -> Result:
+    """Run a particle step over a duration, forward or backward in time.
+
+    Particle p is released at the offset r_p = d (t_{r,p} − t₀), with d the sign
+    of ``duration``. In step k, which covers the offsets s_k to s_k + Δt_k in the
+    run's direction, it begins its move at max(s_k, r_p) and moves for
+
+        δ_{p,k} = clip(s_k + Δt_k − max(s_k, r_p), 0, Δt_k),
+
+    so a release inside a step is exact.
+
+    Algorithm:
+        1. Split |``duration``| in steps of ``step_size``, the last one shorter.
+           A backward run takes them in reverse order, so it undoes the intervals
+           of the forward run.
+        2. At each step, call ``step`` with start t₀ + d max(s_k, r_p), the
+           durations δ (0 for an inactive particle), d and the noise.
+        3. Deactivate the particles outside ``domain``, where they are.
+        4. Add the accumulator's contribution.
+
+    Args:
+        state: The particles. A particle is released once the clock has passed
+            its release time in the run's direction, so a backward run usually
+            takes the time it starts from.
+        step: What moves the particles.
+        t0: The start of the run, in seconds from its epoch. It may be traced, so
+            one trace serves every start time.
+        duration: T, the length of the run [s], negative for a backward run.
+            Static.
+        step_size: Δt > 0, the length of a step [s]. Static.
+        key: The PRNG key of the noise, split up front into one key per step. Do
+            not re-use the key of the release.
+        noise: The noise itself, one array per step, in place of ``key``: for
+            antithetic pairs, for common random numbers across runs, or for noise
+            that was learned. It costs O(K N).
+        domain: The box outside of which a particle becomes inactive.
+        accumulate: What to sum over the run.
+        save_every: Save the positions every so many steps. It must divide the
+            number of steps.
+        adjoint: How to differentiate: `integrix.adjoint.Checkpointed` stores the
+            carry every ``every`` steps, `integrix.adjoint.Truncated` cuts the
+            gradient before the last ``k``; with ``save_every`` they count blocks
+            of it. ``None`` stores every carry.
+
+    Returns:
+        The final state, the accumulated total and the saved positions.
+
+    Raises:
+        ValidationError: If ``duration`` or ``step_size`` is not a finite number,
+            a concrete time is too far from its epoch for the positions' dtype,
+            ``save_every`` does not divide the number of steps, or not exactly one
+            of ``key`` and ``noise`` is given for a step with noise.
+
+    Examples:
+        A drifter in a uniform current, released 13 s into the run:
+
+        >>> import jax.numpy as jnp
+        >>> from tracerax.advect import Deterministic, integrate
+        >>> from tracerax.particles import at_point
+        >>> from tracerax.velocity import uniform
+        >>> state = at_point(jnp.zeros(2), 1, release_time=13.0)
+        >>> step = Deterministic(uniform(jnp.array([2.0, 0.0])))
+        >>> result = integrate(state, step, t0=0.0, duration=100.0, step_size=10.0)
+        >>> bool(jnp.allclose(result.state.position, jnp.array([[174.0, 0.0]])))
+        True
+
+        Its positions every five steps, the input state's first:
+
+        >>> result = integrate(
+        ...     state, step, t0=0.0, duration=100.0, step_size=10.0, save_every=5
+        ... )
+        >>> result.trajectory.shape, result.offsets.tolist()
+        ((3, 1, 2), [0.0, 50.0, 100.0])
+    """
+    _check_run(duration, step_size, t0)
+    position = state.position
+    dtype = position.dtype
+    _check_epoch(t0, "t0", step_size, dtype)
+    _check_epoch(state.release_time, "release_time", step_size, dtype)
+
+    # --- the steps, on the host ---
+    direction = math.copysign(1.0, duration) if duration != 0.0 else 1.0
+    horizon = abs(float(duration))
+    n_steps = n_steps_for_horizon(horizon, step_size)
+    if save_every is not None:
+        check_count(save_every, "save_every")
+        if n_steps % save_every:
+            raise ValidationError(
+                f"'save_every' must divide the number of steps, {n_steps}, "
+                f"got {save_every}"
+            )
+    lengths = step_durations(horizon, step_size, n_steps)
+    if direction < 0.0:
+        # the partial interval of the forward run is undone first
+        lengths = lengths[::-1].copy()
+    # s_k = Δt_0 + (k − 1) Δt, for k ≥ 1
+    begins = np.arange(n_steps, dtype=np.float64) * step_size
+    if n_steps:
+        begins[1:] += lengths[0] - step_size
+
+    # --- what the scan carries ---
+    draws, draw_noise = _noise_source(step, state, key, noise, n_steps)
+    start_time = jnp.asarray(t0, dtype=dtype)
+    # r_p = d (t_{r,p} − t₀)
+    release = direction * (state.release_time - start_time)
+    total = None if accumulate is None else jax.tree.map(jnp.asarray, accumulate.init())
+
+    def advance(carry: Any, inputs: Any) -> tuple[Any, None]:
+        particles, summed = carry
+        offset, length, draw = inputs
+        # max(s_k, r_p)
+        begin = jnp.maximum(offset, release)
+        # δ_{p,k} = clip(s_k + Δt_k − max(s_k, r_p), 0, Δt_k)
+        elapsed = jnp.clip(offset + length - begin, 0.0, length)
+        elapsed = jnp.where(particles.active, elapsed, 0.0)
+        moved = step(
+            particles,
+            start_time + direction * begin,
+            elapsed,
+            direction,
+            draw_noise(draw),
+        )
+        if domain is not None:
+            active = moved.active & domain.contains(moved.position)
+            moved = eqx.tree_at(lambda particles: particles.active, moved, active)
+        if accumulate is not None:
+            summed = accumulate.update(summed, moved, elapsed)
+        return (moved, summed), None
+
+    inputs = (
+        jnp.asarray(begins, dtype=dtype),
+        jnp.asarray(lengths, dtype=dtype),
+        draws,
+    )
+    scan = _scan(adjoint)
+    if save_every is None:
+        (final, accumulated), _ = scan(advance, (state, total), inputs)
+        return Result(final, accumulated, None, None)
+
+    def advance_block(
+        carry: Any, block: Any
+    ) -> tuple[Any, Float[Array, "particle axis"]]:
+        carry, _ = jax.lax.scan(advance, carry, block)
+        return carry, carry[0].position
+
+    # (K, …) → (K/m, m, …)
+    blocks = jax.tree.map(
+        lambda leaf: leaf.reshape(n_steps // save_every, save_every, *leaf.shape[1:]),
+        inputs,
+    )
+    (final, accumulated), saved = scan(advance_block, (state, total), blocks)
+    first = einx.id("particle axis -> 1 particle axis", position)
+    trajectory = jnp.concatenate([first, saved])
+    # the last offset is the whole horizon, without the rounding of a sum
+    ends = np.append(begins[save_every::save_every], horizon) if n_steps else []
+    offsets = jnp.asarray(direction * np.concatenate([[0.0], ends]), dtype=dtype)
+    return Result(final, accumulated, trajectory, offsets)

@@ -70,4 +70,33 @@ moved = step(state, start, duration, 1.0, noise)
 
 The linear part is integrated exactly, so homogeneous turbulence has no step-size bias in the velocity. The drift that keeps an uneven column well mixed is first order, so keep the step short against τ_L, and the position is first order too: use a step of τ_L / 12 or less. The walls fold a particle back any number of times, so none is ever outside.
 
+## The loop
+
+`integrate` runs any `ParticleStep`, forward or backward: a drifter, a diffusing tracer and a plume share one set of releases, masks, sums and saves.
+
+```python
+from tracerax.advect import integrate
+from tracerax.particles import release_times
+
+# a continuous release of 10 minutes, followed for half an hour
+key_start, key_run = jax.random.split(jax.random.key(0))
+state = at_point(
+    jnp.array([0.0, 0.0, 10.0]),
+    1000,
+    mass=0.5 * 600.0,
+    release_time=release_times(0.0, 600.0, 1000),
+)
+state = with_turbulent_velocity(state, closure, key=key_start)
+result = integrate(
+    state, step, t0=0.0, duration=1800.0, step_size=5.0, key=key_run, save_every=60
+)
+```
+
+- **Time.** `duration` and `step_size` are static and `t0` may be traced, so one compiled run serves every start time. Inside a run times are offsets from `t0`. In float32, count times from an epoch near the run: float32 resolves 128 s at Unix-epoch seconds, and the loop raises when a concrete time is too coarse for the step.
+- **Releases** are exact, also inside a step, because every particle has its own duration.
+- **Noise** is drawn from one key, or passed in, one array per step: negate it for antithetic pairs, keep it for common random numbers.
+- **Sums.** An `Accumulator` is called after every step with the state and how long each particle moved, so a run of thousands of steps stores sums and no trajectory.
+- **Memory.** Reverse mode stores every carry; `integrix.adjoint.Checkpointed(every=k)` stores O(K/k + k) of them, least near k = √K. A trajectory adds one array of positions per save. Forward mode works with both.
+- **Ensembles** are a `jax.vmap` over keys.
+
 ::: tracerax.advect
