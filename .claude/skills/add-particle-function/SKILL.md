@@ -38,11 +38,11 @@ Private code goes in `src/tracerax/_src/<module>/<topic>.py`; the public module 
 
 ## 5. Tests
 
-In `tests/test_<module>.py`, with the harness of [#15](https://github.com/jejjohnson/tracerax/issues/15):
+In `tests/test_<module>.py`, with the helpers of `tests/`:
 
-- **Oracle.** A closed form or a stored plumax value, in float64, with the tolerance and its source in a comment. A sample is compared through a statistic bounded by its own sampling distribution, with a constant key.
-- **Transforms.** Eager, `jit` and `vmap` over a batch of one agree.
-- **Gradients.** Autodiff against central differences at a fixed key, where the function is smooth.
+- **Oracle.** A closed form (`tests/_oracles.py`) or a stored plumax value (`plumax_values`), in float64, with the tolerance and its source in a comment (`assert_matches_oracle`; `assert_adjoint` for a linear map). A sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key.
+- **Transforms.** Eager, `jit` and `vmap` over a batch of one agree (`assert_traces`).
+- **Gradients.** Autodiff against central differences at a fixed key, where the function is smooth (`assert_grad_matches_fd`).
 - **Masks.** An inactive or unreleased particle changes nothing and stays finite, in value and in gradient.
 - The edges: no active particle, a release inside a step, a release after the end, a particle on a wall, a backward run, float32 in and out, each invalid argument (`match=`).
 

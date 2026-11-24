@@ -119,22 +119,25 @@ Most rules here are tests, so CI tells you when one breaks. Read a test's docstr
 | `--doctest-modules` on `src/tracerax` (`addopts`) | Every docstring `Examples:` block runs and prints what it says |
 | `tests/test_exceptions.py` | The hierarchy: every error is a `TraceraxError` and a standard-library exception |
 | `tests/test_build_docs.py` | The two-tool docs pipeline: inventory parsing, anchor repair, link checking, the inventory port and the absolute nav URL in `docs/myst.yml`, the files copied to the site root (`ROOT_FILES`) |
-| `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; tests marked `gridax` are skipped when it is not installed |
+| `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; hypothesis has no deadline, because the first example compiles; tests marked `gridax` are skipped when it is not installed |
 | `tests/test_import_isolation.py` | Importing every module loads no stack library but functax, integrix and their own dependencies, and not gridax even when it is installed |
+| `tests/test_harness.py` | The harness itself: one toy step passes every check, each check fails on a wrong function, each closed form agrees with an independent evaluation, and every stored plumax value is reproduced in NumPy |
 | CI job "with the gridax extra" | The `gridax` extra installs, and the tests pass with it |
 | `uv sync --locked` in every test job | `uv.lock` matches the pins in `pyproject.toml` |
 | `[tool.coverage.report] fail_under = 90` | Coverage of `src/tracerax` in every coverage-enabled run (CI, `uv run poe test-cov`) |
 | `strict_markers = true` | Only the registered markers (`slow`, `integration`, `gridax`) exist |
 | ruff (`select = E, F, I, UP, B, SIM, RUF`), ty | Lint (the whole repo), format, types on `src/tracerax` and `scripts` |
 
-Each function brings four tests, as `add-particle-function` lays out:
+Each function brings four tests, as `add-particle-function` lays out, with the helpers of `tests/` ([#15](https://github.com/jejjohnson/tracerax/issues/15)):
 
-1. **Oracle**: a closed form or stored plumax values, at a stated tolerance, in float64.
-2. **Transforms**: eager, `jit` and `vmap` over a batch of one agree.
-3. **Gradients**: autodiff against central differences at a fixed key, where the function is smooth.
+1. **Oracle**: a closed form or stored plumax values, at a stated tolerance, in float64 (`assert_matches_oracle`, `tests/_oracles.py`). A linear map and its transpose also get the dot-product test (`assert_adjoint`).
+2. **Transforms**: eager, `jit` and `vmap` over a batch of one agree (`assert_traces`).
+3. **Gradients**: autodiff against central differences at a fixed key, where the function is smooth (`assert_grad_matches_fd`).
 4. **Masks**: an inactive or unreleased particle changes nothing and stays finite.
 
-The harness for them is [#15](https://github.com/jejjohnson/tracerax/issues/15).
+A result that is a sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key. `tests/_closures.py` holds the two turbulence closures.
+
+plumax will import tracerax, so its values are stored in `tests/data/`, with the plumax commit in each file name, by `write_plumax.py`, which refuses another commit and has a `--check`. Every stored case is one where a single reflection per wall is enough ([plumax#392](https://github.com/jejjohnson/plumax/issues/392)). Add an array there rather than a test dependency, and reproduce it in `tests/test_harness.py`.
 
 ## Recipes
 
