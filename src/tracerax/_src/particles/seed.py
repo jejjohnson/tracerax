@@ -232,8 +232,11 @@ def in_box(
     if is_concrete(low, high) and not (np.asarray(low) < np.asarray(high)).all():
         raise ValidationError(f"'lower' must be below 'upper', got {low} and {high}")
     draws = jax.random.uniform(key, (n, *low.shape), dtype=low.dtype)
+    # rounding can put lower + ξ (upper − lower) on upper, which is outside
+    below = jnp.nextafter(*jax.lax.stop_gradient((high, low)))
     # x = lower + ξ (upper − lower)
-    return _released(low + draws * (high - low), mass, release_time)
+    position = jnp.minimum(low + draws * (high - low), below)
+    return _released(position, mass, release_time)
 
 
 def release_times(

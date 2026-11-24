@@ -309,6 +309,10 @@ class TestWeightedSum:
         times = jnp.array([0.0, 50.0, 130.0])
         assert_traces(lambda t, x: drift(t, x), times, position, rtol=1e-11)
 
+    def test_a_float64_term_keeps_float32_positions(self) -> None:
+        drift = WeightedSum((lambda t, x: jnp.ones(x.shape, jnp.float64),), [2.0])
+        assert drift(0.0, jnp.ones((3, 2), jnp.float32)).dtype == jnp.float32
+
     def test_float32_positions_give_float32(self) -> None:
         drift = WeightedSum(self._terms(), jnp.array([1.0, 0.03]))
         assert drift(0.0, jnp.ones((3, 2), jnp.float32)).dtype == jnp.float32

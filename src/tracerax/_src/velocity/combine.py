@@ -74,5 +74,6 @@ class WeightedSum(eqx.Module):
         total = jnp.zeros_like(position)
         for weight, velocity in zip(weights, self.velocities, strict=True):
             # u ← u + wₘ uₘ(t, x)
-            total = total + weight * velocity(t, position)
+            term = velocity(t, position).astype(position.dtype)
+            total = total + weight * term
         return total

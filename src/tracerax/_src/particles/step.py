@@ -19,7 +19,9 @@ class ParticleStep(Protocol):
     A step returns the positions and the memory only. Releases, masks, domains
     and noise are the loop's, so one loop runs any step. A step with duration 0
     returns the particle unchanged, bit for bit: this is how an unreleased
-    particle waits.
+    particle waits. The loop hands such a particle a stand-in position, where a
+    run is known to start, so that a field that is undefined at its own does not
+    spoil the gradient; it puts the particle back after the step.
 
     Examples:
         A step that drifts at 1 m s⁻¹ along x, with no noise:

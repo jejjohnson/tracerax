@@ -243,6 +243,88 @@ class TestDeterministic:
         with pytest.raises(ValidationError, match="'release_time' must lie"):
             deterministic(state, ROTATION, t0=0.0, duration=10.0, n_steps=5)
 
+    def test_a_traced_release_inside_a_step_is_refused(self) -> None:
+        @eqx.filter_jit
+        def run(release: jax.Array) -> jax.Array:
+            state = _released_at(at_point(jnp.zeros(2), 1), release)
+            final, _ = deterministic(state, ROTATION, t0=0.0, duration=10.0, n_steps=5)
+            return final.position
+
+        assert bool(jnp.isfinite(run(jnp.asarray(4.0))).all())
+        with pytest.raises(RuntimeError, match="'release_time' must lie"):
+            run(jnp.asarray(3.0))
+
+    @pytest.mark.parametrize(
+        ("release", "options"),
+        [
+            # float32 rounds 20.1 by more than 1e-6 of a step
+            (20.1, {"t0": 0.0, "duration": 100.0, "n_steps": 1000}),
+            (1000.1, {"t0": 1000.1, "duration": -10.0, "n_steps": 10}),
+            # a release after the end is on no step
+            (105.5, {"t0": 0.0, "duration": 100.0, "n_steps": 10}),
+            (-3.3, {"t0": 0.0, "duration": 100.0, "n_steps": 10}),
+        ],
+    )
+    def test_a_release_on_no_step_or_rounded_is_accepted(
+        self, release: float, options: dict[str, Any]
+    ) -> None:
+        state = at_point(jnp.zeros(2, jnp.float32), 1, release_time=release)
+        wind = uniform(jnp.array([1.0, 0.0]))
+        final, _ = deterministic(state, wind, **options)
+        direction = np.sign(options["duration"])
+        wait = max(direction * (release - options["t0"]), 0.0)
+        expected = direction * max(abs(options["duration"]) - wait, 0.0)
+        # float32 times of order 1000 s round to 6e-5 s
+        assert_matches_oracle(final.position[0, 0], expected, rtol=0.0, atol=1e-3)
+
+    def test_a_float32_save_at_the_end_is_accepted(self) -> None:
+        state = at_point(jnp.zeros(2, jnp.float32), 1)
+        _, saved = deterministic(
+            state,
+            uniform(jnp.ones(2)),
+            t0=0.0,
+            # NumPy compares a float32 with this in float64
+            duration=np.float64(0.1),
+            n_steps=3,
+            save_at=jnp.array([0.1], jnp.float32),
+        )
+        assert_matches_oracle(saved[0], np.full((1, 2), 0.1), rtol=1e-6)
+
+    def test_gradient_in_a_release_on_a_step(self) -> None:
+        """Exact for a steady velocity, also where a clip would tie."""
+
+        def end(release: jax.Array) -> jax.Array:
+            state = _released_at(at_point(jnp.zeros(2), 1), release)
+            wind = uniform(jnp.array([3.0, 0.0]))
+            final, _ = deterministic(state, wind, t0=0.0, duration=10.0, n_steps=5)
+            return final.position[0, 0]
+
+        for release in (0.0, 4.0, 8.0):
+            assert_matches_oracle(jax.grad(end)(jnp.asarray(release)), -3.0, rtol=1e-13)
+
+    def test_a_tableau_without_a_first_weight_is_refused_with_a_domain(self) -> None:
+        options = {"t0": 0.0, "duration": 1.0, "n_steps": 2, "solver": dfx.Midpoint()}
+        deterministic(_line(), ROTATION, **options)
+        with pytest.raises(ValidationError, match="Midpoint"):
+            deterministic(
+                _line(), ROTATION, domain=Box([-9.0, -9.0], [9.0, 9.0]), **options
+            )
+
+    @pytest.mark.parametrize("solver", [dfx.Heun(), dfx.Tsit5(), dfx.Bosh3()])
+    def test_a_particle_leaves_with_any_other_solver(self, solver: Any) -> None:
+        state = at_point(jnp.array([5.6, 0.0]), 1)
+        final, _ = deterministic(
+            state,
+            uniform(jnp.array([1.0, 0.0])),
+            t0=0.0,
+            duration=50.0,
+            n_steps=50,
+            solver=solver,
+            domain=Box([0.0, -1.0], [10.0, 1.0]),
+        )
+        assert not bool(final.active[0])
+        assert float(final.position[0, 0]) >= 10.0
+
     def test_a_particle_that_leaves_stops_and_is_inactive(self) -> None:
         box = Box([-1.0, -1.0], [5.0, 5.0])
         state = at_point(jnp.zeros(2), 2)
@@ -405,6 +487,16 @@ class TestDeterministicStep:
         zeros = jnp.zeros(3, jnp.float32)
         moved = Deterministic(uniform(jnp.ones(2)))(state, zeros, zeros + 1, 1.0, None)
         assert moved.position.dtype == jnp.float32
+
+    def test_a_float64_velocity_keeps_float32_positions(self) -> None:
+        def wind(t: Any, position: jax.Array) -> jax.Array:
+            return jnp.ones(position.shape, jnp.float64)
+
+        state = along_line(jnp.zeros(2, jnp.float32), jnp.ones(2, jnp.float32), 3)
+        ones = jnp.ones(3, jnp.float32)
+        moved = Deterministic(wind)(state, ones, ones, 1.0, None)
+        final, _ = deterministic(state, wind, t0=0.0, duration=1.0, n_steps=2)
+        assert moved.position.dtype == final.position.dtype == jnp.float32
 
     def test_an_implicit_solver_is_refused(self) -> None:
         with pytest.raises((ValidationError, TypeError), match="solver"):

@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.advect.turbulence import TurbulenceModel
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
@@ -110,12 +111,12 @@ def langevin_step(
         True
     """
     _check_three_columns(state)
-    position = state.position
-    dtype = position.dtype
+    dtype = state.position.dtype
     durations = jnp.broadcast_to(
         jnp.asarray(duration, dtype=dtype), (state.n_particles,)
     )
     moves = state.active & (durations > 0.0)
+    position = stand_in(state.position, moves)
     # a particle that waits keeps finite gradients: √ has none at δ = 0
     elapsed = jnp.where(moves, durations, 1.0)
     waiting = jnp.zeros((), dtype=dtype)
@@ -150,13 +151,12 @@ def langevin_step(
     moved = moved.at[:, 2].set(height)
     velocity = velocity.at[:, 2].set(vertical)
 
-    chosen = "particle, particle axis, particle axis -> particle axis"
     return eqx.tree_at(
         lambda particles: (particles.position, particles.velocity),
         state,
         (
-            einx.where(chosen, moves, moved.astype(dtype), position),
-            einx.where(chosen, moves, velocity.astype(dtype), state.velocity),
+            choose(moves, moved, state.position),
+            choose(moves, velocity, state.velocity),
         ),
     )
 
@@ -165,8 +165,8 @@ class Langevin(eqx.Module):
     """The Langevin step as a `ParticleStep`, with noise of shape (N, 3).
 
     The mean velocity is read at each particle's position and at the physical
-    start of its interval, min(start, start + d δ), so a backward step is the
-    discrete reverse of a forward one; backward, the step takes −u.
+    start of its interval, min(start, start + d δ), which is the same time forward
+    and backward; backward, the step takes −u.
 
     Attributes:
         velocity: u(t, x) [m s⁻¹].
@@ -236,7 +236,8 @@ class Langevin(eqx.Module):
         # the physical start of the interval, in both directions
         time = jnp.minimum(start, start + direction * duration)
         # d u(t, x)
-        mean = direction * self.velocity(time, state.position)
+        moves = state.active & (duration > 0.0)
+        mean = direction * self.velocity(time, stand_in(state.position, moves))
         return langevin_step(
             state, mean, self.turbulence, duration, noise, walls=self.walls
         )

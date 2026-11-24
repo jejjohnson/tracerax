@@ -246,6 +246,13 @@ class TestInBox:
         corners = jnp.stack([self.LOWER, self.UPPER])
         assert_grad_matches_fd(lambda c: in_box(c[0], c[1], 4, key=KEY), corners)
 
+    def test_float32_rounding_does_not_reach_the_upper_corner(self) -> None:
+        lower = jnp.array([1000.0, 0.0], jnp.float32)
+        upper = jnp.array([1001.0, 1.0], jnp.float32)
+        state = in_box(lower, upper, 200_000, key=KEY)
+        assert bool((state.position < upper).all())
+        assert bool((state.position >= lower).all())
+
     def test_lower_below_upper(self) -> None:
         with pytest.raises(ValidationError, match="'lower' must be below"):
             in_box(self.UPPER, self.LOWER, 4, key=KEY)

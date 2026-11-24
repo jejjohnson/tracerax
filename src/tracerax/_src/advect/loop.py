@@ -21,6 +21,7 @@ from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 from tracerax._src._validate import check_count, is_concrete
 from tracerax._src.advect.domain import Box
+from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.particles.step import ParticleStep
 from tracerax._typing import ScalarLike
@@ -202,6 +203,14 @@ def _noise_source(
     return keys, lambda draw: jax.random.normal(draw, shape, dtype=dtype)
 
 
+def _position(particles: ParticleState) -> Any:
+    return particles.position
+
+
+def _moving(particles: ParticleState) -> Any:
+    return particles.position, particles.velocity, particles.active
+
+
 def _scan(adjoint: Checkpointed | Truncated | None) -> Callable[..., Any]:
     """The scan of an adjoint."""
     if adjoint is None:
@@ -241,7 +250,9 @@ def integrate(
            of the forward run.
         2. At each step, call ``step`` with start t₀ + d max(s_k, r_p), the
            durations δ (0 for an inactive particle), d and the noise.
-        3. Deactivate the particles outside ``domain``, where they are.
+        3. Deactivate the particles outside ``domain``, where they are. One that
+           a step leaves at NaN, outside the data, keeps its position from before.
+           A particle that starts outside never moves.
         4. Add the accumulator's contribution.
 
     Args:
@@ -259,7 +270,11 @@ def integrate(
         noise: The noise itself, one array per step, in place of ``key``: for
             antithetic pairs, for common random numbers across runs, or for noise
             that was learned. It costs O(K N).
-        domain: The box outside of which a particle becomes inactive.
+        domain: The box outside of which a particle becomes inactive. A step
+            that leaves a particle at NaN, outside the data, puts it back and
+            deactivates it, but the NaN has been computed and a reverse-mode
+            gradient through it is NaN: give such a run a field that is defined
+            outside the box, such as one clamped at its edge.
         accumulate: What to sum over the run.
         save_every: Save the positions every so many steps. It must divide the
             number of steps.
@@ -328,27 +343,54 @@ def integrate(
     draws, draw_noise = _noise_source(step, state, key, noise, n_steps)
     start_time = jnp.asarray(t0, dtype=dtype)
     # r_p = d (t_{r,p} − t₀)
-    release = direction * (state.release_time - start_time)
+    release = direction * (state.release_time.astype(dtype) - start_time)
+    if domain is not None:
+        inside = state.active & domain.contains(position)
+        state = eqx.tree_at(lambda particles: particles.active, state, inside)
+    # where a field is read for a particle that does not move
+    reference = position[jnp.argmax(state.active)]
     total = None if accumulate is None else jax.tree.map(jnp.asarray, accumulate.init())
 
     def advance(carry: Any, inputs: Any) -> tuple[Any, None]:
         particles, summed = carry
         offset, length, draw = inputs
-        # max(s_k, r_p)
-        begin = jnp.maximum(offset, release)
-        # δ_{p,k} = clip(s_k + Δt_k − max(s_k, r_p), 0, Δt_k)
-        elapsed = jnp.clip(offset + length - begin, 0.0, length)
+        # --- when each particle moves, and for how long ---
+        # δ_{p,k} = clip(s_k + Δt_k − max(s_k, r_p), 0, Δt_k), by branches: a tie
+        # of the maximum or the clip would split the gradient in r_p, and
+        # s_k + Δt_k − s_k is not Δt_k in float32
+        waits = release >= offset
+        remaining = length - (release - offset)
+        partial = jnp.where(remaining > 0.0, remaining, 0.0)
+        elapsed = jnp.where(waits, partial, length)
         elapsed = jnp.where(particles.active, elapsed, 0.0)
+        moves = elapsed > 0.0
+        # max(s_k, r_p)
+        begin = jnp.where(waits & moves, release, offset)
+
+        # --- move ---
+        before = (particles.position, particles.velocity)
+        read = stand_in(particles.position, moves, reference)
         moved = step(
-            particles,
+            eqx.tree_at(_position, particles, read),
             start_time + direction * begin,
             elapsed,
             direction,
             draw_noise(draw),
         )
+        after = (moved.position, moved.velocity)
+        active = moved.active
         if domain is not None:
-            active = moved.active & domain.contains(moved.position)
-            moved = eqx.tree_at(lambda particles: particles.active, moved, active)
+            # a step that reads outside the data can end on NaN: it did not move
+            finite = einx.all("particle [axis]", jnp.isfinite(moved.position))
+            elapsed = jnp.where(finite, elapsed, 0.0)
+            moves = moves & finite
+            active = active & finite
+        position, velocity = (
+            choose(moves, new, old) for new, old in zip(after, before, strict=True)
+        )
+        if domain is not None:
+            active = active & domain.contains(position)
+        moved = eqx.tree_at(_moving, moved, (position, velocity, active))
         if accumulate is not None:
             summed = accumulate.update(summed, moved, elapsed)
         return (moved, summed), None
