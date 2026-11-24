@@ -70,6 +70,20 @@ moved = step(state, start, duration, 1.0, noise)
 
 The linear part is integrated exactly, so homogeneous turbulence has no step-size bias in the velocity. The drift that keeps an uneven column well mixed is first order, so keep the step short against τ_L, and the position is first order too: use a step of τ_L / 12 or less. The walls fold a particle back any number of times, so none is ever outside.
 
+## Diffusion
+
+A surface drifter has no turbulence closure; what a model gives is a diffusivity K, a constant or a field. `RandomDisplacement` follows the mean velocity and diffuses with it, in two or three dimensions.
+
+```python
+from tracerax.advect import ConstantDiffusivity, RandomDisplacement
+
+drifter = RandomDisplacement(
+    uniform(jnp.array([0.3, 0.1])), ConstantDiffusivity([10.0, 10.0])
+)
+```
+
+Where K varies, the step adds the drift ∂K/∂x. Without it particles gather where K is small, at every step size, and a cloud that starts uniform does not stay so. The scheme takes K to be nearly linear over one step, so keep the step under 0.1 / max |∂²K/∂x²|. A `GriddedDiffusivity` reads K from fields as `GriddedVelocity` reads a velocity; a closure such as Smagorinsky's is computed on the model's grid and passed that way.
+
 ## The loop
 
 `integrate` runs any `ParticleStep`, forward or backward: a drifter, a diffusing tracer and a plume share one set of releases, masks, sums and saves.
