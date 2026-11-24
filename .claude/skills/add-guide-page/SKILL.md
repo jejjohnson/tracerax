@@ -19,13 +19,13 @@ Read "Documentation" in `AGENTS.md` first; `docs/README.md` explains the two-too
 - Directives, not MkDocs-Material syntax: `:::{note}`, `:::{tip}`, `:::{dropdown} Title`, `::::{tab-set}` / `:::{tab-item}`, `::::{grid}` / `:::{grid-item-card}` (see `docs/index.md` and `docs/guide/*.md`).
 - Maths with `$…$` and `$$…$$` in the `eman-style-math` notation ("Maths notation" in `AGENTS.md`): the kind-named macros (`\vect{x}`, `\gmat{\Sigma}`) that `docs/myst.yml` loads, every symbol defined with its shape before its first use, each expression on one source line, no spacing macros (`\,`, `\quad`).
 - Prose in the maintainer's voice (`eman-prose-tech`, docs register), not hard-wrapped: one line per paragraph. Diagrams are Mermaid (a `{mermaid}` directive), never ASCII art.
-- Link the API with the `xref:` protocol and the **top-level** name: ``[`summarize`](xref:api#mypackage.summarize)``. Links to other prose pages are relative paths to their source files (`[CLI](guide/cli.md)`).
+- Link the API with the `xref:` protocol and the **top-level** name: ``[`TraceraxError`](xref:api#tracerax.TraceraxError)``. Links to other prose pages are relative paths to their source files (`[Quickstart](guide/quickstart.md)`).
 - Code blocks are illustrative (nothing executes them): run every snippet yourself and paste real output.
 
 ## 3. Wire it in
 
 - The `toc` entry in `docs/myst.yml`.
-- If an API page covers the same module, link the guide from it the way `docs/api/stats.md` does (`[statistics guide](../statistics/)`: the flat URL, written relative to the source file in `docs/api/`, because Zensical resolves links from the source file and adds one level for the page's directory URL, so it emits `../../statistics/` from `/reference/stats/`).
+- If an API page covers the same module, link the guide from it the way an API page does (`[particles guide](../particles-guide/)`: the flat URL, written relative to the source file in `docs/api/`, because Zensical resolves links from the source file and adds one level for the page's directory URL, so it emits `../../particles-guide/` from `/reference/particles/`).
 
 ## 4. Verify
 

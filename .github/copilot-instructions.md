@@ -1,17 +1,19 @@
 # Copilot Instructions
 
-Read [`AGENTS.md`](../AGENTS.md) at the repository root first: it is the single source of truth for every coding agent working here (the module map, "reuse before you write", the contracts, the tests that enforce them, commands, the pre-commit checklist, the two-tool docs, git and PR rules). Passages marked `<!-- template-example: … -->` there describe the bundled example package and are rewritten when the template is adopted.
+Read [`AGENTS.md`](../AGENTS.md) at the repository root first: it is the single source of truth for every coding agent working here (the module map, "reuse before you write", the contracts, the tests that enforce them, commands, the pre-commit checklist, the two-tool docs, git and PR rules).
 
 The essentials, in case you only read this file:
 
-<!-- template-example: the module map and contracts of the example package. -->
-
-- One package, `src/mypackage/`, dependency-free, with modules that import only downward: `_typing` → `exceptions` → `utils` → `stats` / `smoothing` → `transforms` → `cli`. Search [`docs/api/capabilities.md`](../docs/api/capabilities.md) before writing a helper.
+- One package, `src/tracerax/`: the GeoStack's library of Lagrangian particles, in JAX. It imports functax and integrix, and nothing else from the GeoStack at runtime (never geotoolz, pipekit, gaussx, kernellib or a model). Public modules, each created by its first feature issue: `particles`, `velocity`, `advect`, `bin`, `footprint`, `analysis`; private code in `_src/<module>/`. Search [`docs/api/capabilities.md`](../docs/api/capabilities.md) before writing a helper.
+- Ownership test: is the state a set of positions carried forward in time, or does it analyse such positions? A scheme that discards its departure points is integrix's; closures, plume physics and source inversions are plumax's; interpolation and binning are functax's.
 - Keep the contracts in `AGENTS.md`:
-  - **public functions** validate once, at the boundary, with the `utils` validators, raise `ValidationError` naming the argument, and return a new list without mutating their input;
-  - **transforms** satisfy the `Transform` protocol structurally; fitted ones raise `NotFittedError` before `fit`, and `fit` returns `self`;
-  - **CLI** subcommands write to the injected streams and return an exit status; library errors become exit 1, usage errors exit 2;
-  - every exception derives from `MypackageError` and its stdlib base.
+  - **JAX only**: pure functions and Equinox modules; nothing calls `jax.jit`;
+  - **shapes are static**: particles are masked, never dropped, and a masked particle keeps finite values;
+  - **units** are SI; position columns are (x, y) or (x, y, z); a gridded velocity keeps (time, z, y, x);
+  - **velocity** is `velocity(t, position)`; a **step** is a `ParticleStep`, run by the one loop;
+  - **time** is an offset from a traced `t0` over a static signed `duration`, negative for a backward run;
+  - **randomness** is one key per run, or the noise itself; nothing reads a global seed;
+  - **precision** follows the positions' dtype; every exception derives from `TraceraxError` and a standard-library exception.
 
 The rules for every project:
 
@@ -22,5 +24,5 @@ The rules for every project:
 - Partial test runs need `--no-cov` (the 90 % coverage gate fails a subset).
 - Never push or merge to `main` unless told to; never replace an existing PR description, only append to it.
 - No AI attribution: no `Co-Authored-By:` trailer for an AI and no "Generated with …" line, unless asked. PR descriptions open with why, then a small before/after table; one `Closes #N` line per issue.
-- Step-by-step recipes (adopt the template, add a function, transform, CLI command, guide page or notebook; pre-PR check; review) are plain Markdown in `.claude/skills/<name>/SKILL.md`, and the two review checklists in `.claude/agents/`; follow them as written.
+- Step-by-step recipes (add a particle function, guide page or notebook; pre-PR check; review) are plain Markdown in `.claude/skills/<name>/SKILL.md`, and the two review checklists in `.claude/agents/`; follow them as written.
 - Path-scoped standards live in `.github/instructions/`; code review follows [`CODE_REVIEW.md`](../CODE_REVIEW.md).

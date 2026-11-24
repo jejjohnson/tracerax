@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Bootstrap the standard label taxonomy for this template.
+# Bootstrap the standard label taxonomy for tracerax.
 #
-# Creates labels for: type / area / layer / wave / priority.
+# Creates labels for: type / area / wave / priority.
 # Idempotent — uses `gh label create --force` so re-runs are safe.
 #
 # Usage:
@@ -46,25 +46,20 @@ create "type:docs"        "0075ca" "Documentation work"
 create "type:research"    "bfe5bf" "Comparative analysis / prior-art survey / investigation"
 
 echo "Creating area:* labels..."
+create "area:particles"   "c2e0c6" "tracerax.particles: the particle state, the step protocol, seeding"
+create "area:velocity"    "bfd4f2" "tracerax.velocity: velocities at particles"
+create "area:advect"      "d4c5f9" "tracerax.advect: steps, walls and the integration loop"
+create "area:bin"         "f9d0c4" "tracerax.bin: cells, deposits, concentrations"
+create "area:footprint"   "fef2c0" "tracerax.footprint: surface footprints from backward runs"
+create "area:analysis"    "c5def5" "tracerax.analysis: trajectory diagnostics and skill"
 create "area:engineering" "0e8a16" "Build, packaging, CI, tooling"
 create "area:testing"     "bfdadc" "Test suite"
 create "area:docs"        "1d76db" "Docs + notebooks"
-create "area:code"        "c2e0c6" "Source-code changes (catch-all fallback)"
-# Edit / extend for your project. Common domain-specific areas:
-#   area:algorithmic, area:integration, area:performance, area:security
 
 echo "Creating Dependabot / misc labels..."
 create "dependencies" "ededed" "Pull requests that update a dependency file"
 
-echo "Creating layer:* labels (edit to match your project's layer stack)..."
-create "layer:0-primitives" "fef2c0" "Layer 0 — pure primitives"
-create "layer:1-components" "fbca04" "Layer 1 — components / services"
-create "layer:2-models"     "d4c5f9" "Layer 2 — public API / wrappers"
-
 echo "Creating wave:* labels (edit to match your release plan)..."
-# Plain `wave:N` scheme — simple and matches the label format referenced in
-# the epic issue templates. If you prefer descriptive slugs, add extras like
-# `wave:0-bootstrap`, `wave:1-mvp` alongside the numeric base.
 create "wave:0" "c2e0c6" "Wave 0"
 create "wave:1" "bfd4f2" "Wave 1"
 create "wave:2" "d4c5f9" "Wave 2"

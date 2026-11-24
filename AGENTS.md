@@ -4,157 +4,152 @@ Standing instructions for **every** coding agent working in this repository (Cla
 
 The house style (Python, maths notation, prose, pseudocode, reports) comes from the maintainer's personal skills in [jejagents](https://github.com/jejjohnson/jejagents); "House style" and "Personal skills" below say which skill covers what and carry the essentials, so an agent without those skills installed can still follow them.
 
-> **This repository is a template.** Passages that describe the bundled example package, `mypackage`, start with a `<!-- template-example: … -->` comment (`# template-example: …` in code and config). Each marker covers the section it opens, down to the next heading of the same level, unless it names a smaller scope. Marked passages are true of the example and must be rewritten from your own code when you adopt the template (the `adopt-template` skill walks through it; `grep -rn "template-example" .` lists them). Everything unmarked is a permanent rule.
 
 ## What this repo is
 
-<!-- template-example: describe your package and its module map. -->
-
-An opinionated Python package template (Python 3.12+, uv, ruff, ty, pytest, mystmd and MkDocs, release-please) that ships a real worked example, `mypackage`: a **dependency-free** library of descriptive statistics, smoothing filters and composable transforms over one-dimensional numeric series, with an `argparse` console script. It exists so every tool here has real code to operate on: mkdocstrings renders its docstrings, ty checks its annotations, the coverage gate measures its branches, and every docstring example runs as a doctest.
+tracerax is the GeoStack's library of Lagrangian particles, in JAX: it carries a set of positions forward (or backward) in time, and analyses such positions. It moves parcels deterministically, with turbulence or with a diffusivity, deposits them in cells, and turns backward runs into surface footprints. It is a GeoNumerics library, above geophysix and gridax.
 
 People build on a package like this, so **the package is a library of primitives**: new code composes what is here, and anything genuinely new lands where the next person will find and reuse it.
 
-It is one package, `src/mypackage/`. The public API is `mypackage.__all__`, re-exported from `src/mypackage/__init__.py`, plus the `mypackage.cli` module (`main`, `build_parser`). Imports only point down this table:
+The public API is the set of public modules below; private code lives in `src/tracerax/_src/<module>/`, and code that several modules share in `src/tracerax/_src/`. A public module only re-exports. `src/tracerax/__init__.py` exports only `__version__` and the exceptions. [jejjohnson/geostack#304](https://github.com/jejjohnson/geostack/issues/304) is the backlog, and each public module is created by its first feature issue.
 
-| Module | Owns |
-|---|---|
-| `_typing.py` | PEP 695 `type Series = Sequence[float]`; the runtime-checkable `Transform` and `Fittable` protocols |
-| `exceptions.py` | `MypackageError` and its subclasses `ValidationError` (also a `ValueError`), `EmptySeriesError`, `NotFittedError` (also a `RuntimeError`) |
-| `utils.py` | The boundary validators `as_floats`, `require_non_empty`, `require_positive`; the generic `Window[T]` ring buffer; `timer` / `Elapsed` |
-| `stats.py` | `summarize` → frozen `Summary`, `quantile`, `zscores`, streaming `RunningStats` (Welford) |
-| `smoothing.py` | `moving_average`, `exponential_moving_average`, `median_filter`, the `Padding` boundary strategies |
-| `transforms.py` | `Standardize`, `MinMaxScale` (fitted), `Clip`, `MovingAverage` (stateless), `Pipeline`, `chain` |
-| `cli.py` | The `mypackage` console script (`summarize`, `smooth` subcommands), wired through `[project.scripts]` |
+| Module | Owns | Status |
+|---|---|---|
+| `_typing.py` | The `ScalarLike` type alias | now |
+| `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
+| `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | Wave 1 ([#16](https://github.com/jejjohnson/tracerax/issues/16)) |
+| `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | Wave 1 ([#17](https://github.com/jejjohnson/tracerax/issues/17)) |
+| `advect` | Deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | Wave 1 ([#18](https://github.com/jejjohnson/tracerax/issues/18), [#19](https://github.com/jejjohnson/tracerax/issues/19), [#20](https://github.com/jejjohnson/tracerax/issues/20), [#24](https://github.com/jejjohnson/tracerax/issues/24)); the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `bin` | Cells from edges, deposits, residence, concentrations | Wave 2 ([#21](https://github.com/jejjohnson/tracerax/issues/21), [#22](https://github.com/jejjohnson/tracerax/issues/22)) |
+| `footprint` | Surface footprints from backward runs | Wave 2 ([#23](https://github.com/jejjohnson/tracerax/issues/23)) |
+| `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 
 ### Boundaries
 
-<!-- template-example: this list only; replace it with your runtime dependencies, who builds on the package, and what it must never import. -->
+- **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax and integrix, and nothing else from the GeoStack at runtime. It never imports geotoolz, pipekit, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
+- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]` and integrix. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.10 fixes functax v0.0.13, and any other functax fails to resolve. geophysix joins in Wave 3. gridax is the `gridax` extra, imported inside the function that needs it.
+- **Ownership test.** Is the state a set of positions carried forward in time, or does it analyse such positions? Then it belongs here. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
-- **No runtime dependencies** (`dependencies = []` in `pyproject.toml`): everything is the standard library. A new runtime dependency needs discussion; an optional one goes behind an extra and an in-function import that names the extra when it is missing.
-- **The CLI is a thin shell.** `cli.py` parses arguments and formats output; the computation lives in the library modules, which never import `cli`.
-
-Whatever the package, dependencies point one way. When other projects build on it, list them here and keep their imports working: a rename or removal of a public name goes through a deprecation (the old name keeps working with a `DeprecationWarning` that names the replacement for at least one release).
+When other projects build on the package, list them here and keep their imports working through the change that moves them.
 
 ## What it is built on
 
-<!-- template-example: one row per library your package uses, with the rule it brings. -->
-
-Each foundation brings a rule. Breaking one runs fine on your example and fails in someone else's pipeline or in CI.
+Each foundation brings a rule. Breaking one runs fine on your machine and fails in someone else's pipeline or in CI.
 
 | Foundation | The package uses it for | The rule it brings |
 |---|---|---|
-| **Python ≥ 3.12 standard library** | PEP 695 `type` aliases and generics (`class Window[T]`), `typing.Self`, `enum.StrEnum`, `math.fsum`, `statistics.median` | No runtime dependency for what the standard library already does. |
-| **`dataclasses`** | `Summary`, every transform, `RunningStats`, `Elapsed` | `slots=True` always; `frozen=True` for values and stateless objects; a fitted transform keeps what it learned in `init=False` fields with a trailing underscore (`mean_`) defaulting to `None`; validation in `__post_init__`. |
-| **`typing.Protocol`** (`runtime_checkable`) | `Transform`, `Fittable` | Structural, not nominal: no base class, no registry. `isinstance` only checks that the attribute exists, so code that relies on a protocol also checks the attribute is callable (as `Pipeline.__post_init__` does). |
-| **`argparse`** | `mypackage.cli` | Output goes to the injected streams, `main` returns an exit status instead of calling `sys.exit`. |
+| **JAX** | Everything | Traceable: static shapes, no Python control flow on traced values, no host round-trips. Nothing inside the library calls `jax.jit`: the caller jits once, at the top. |
+| **Equinox** | The state, the steps, the velocities and the accumulators as `eqx.Module`s | Arrays are always leaves; configuration is `eqx.field(static=True)`. Field checks in `__check_init__`, checks on traced values with `eqx.error_if`. |
+| **integrix** | The solvers, `checkpointed_scan` and `truncated_scan` | No Butcher tableau, checkpoint block or truncated gradient is written here. |
+| **diffrax** (minor version pinned, as integrix pins it) | `diffeqsolve`, its solvers' tableaux and its adjoints | `solver.step` inside a scan supports one AD mode only, so a step in the loop unrolls the tableau ([#18](https://github.com/jejjohnson/tracerax/issues/18)). |
+| **functax** (`functax[jax]`) | Interpolation of a gridded velocity, binning, edges and cell areas | No interpolation weight or bin index is written here. |
+| **einx** | Reductions, contractions, broadcasts and rearranges | No `axis=`, `.T`, `reshape` or `[:, None]` on dense arrays. |
+| **jaxtyping** | Array annotations | Named dims from the shared vocabulary ("House style"); checked at runtime in tests through the import hook in `tests/conftest.py`. |
+| **gridax** (extra `gridax`) | Grids and masks, for the adapters that read one | Imported inside the function that needs it; gridax requires Python below 3.14. |
+| **SciPy, hypothesis, beartype** (the `test` group) | Reference results, property tests, the runtime type checker | Never imported by `src/`. plumax is never a test dependency, because plumax will import tracerax; its values are stored in `tests/data/` ([#15](https://github.com/jejjohnson/tracerax/issues/15)). |
 | **pytest + `--doctest-modules`** | The suite and every docstring `Examples:` block | An example's expected output is what the code prints; a stale example is a failing test. |
 
 ## Reuse before you write
 
-Before writing a helper, a validator, a statistic, a filter or a transform, find out whether it exists:
+Before writing a helper, a step, an interpolation or a formula, find out whether it exists:
 
 1. **Search the capability index.** [`docs/api/capabilities.md`](docs/api/capabilities.md) lists every public name once, at its public home, grouped by the module that defines it, with a one-line summary. It is generated (`uv run poe capabilities`) and checked by `tests/test_capabilities.py`, so it is current.
 2. **Search the private helpers** in the table below: several invariants live in exactly one place each.
-3. **If it is missing, add it to the module that owns the concept**, at the lowest layer every caller can reach, not inline in the one caller you have today; a helper two modules need goes into `utils.py`.
+3. **If it is missing, add it to the module that owns the concept**, at the lowest layer every caller can reach, not inline in the one caller you have today; a helper two modules need goes into `tracerax._src`.
 4. **One object, one name.** A name means one thing across the package and its submodules (`tests/test_capabilities.py`); a deliberate exception is listed with its reason in `ALLOWED_SHARED_NAMES` in `scripts/capabilities.py`.
-
-<!-- template-example: this table maps hand-rolled code to the example's names; rebuild it for your package. -->
 
 | You are about to write… | Use instead |
 |---|---|
-| `[float(v) for v in series]`, an emptiness check, an `if window <= 0` guard | `as_floats`, `require_non_empty`, `require_positive` (`mypackage.utils`); they raise `ValidationError` / `EmptySeriesError` with the uniform `'name' must …` message |
-| A mean, variance, min / max or median loop | `summarize` (→ `Summary`, with `std`, `spread`, `to_dict()`); `quantile`; `zscores`; one value at a time, `RunningStats` |
-| `math.fsum(values) / len(values)` that must survive overflow | `stats._mean` (rescales by a power of two when the sum overflows) |
-| A rolling mean, rolling median or exponential smoother | `moving_average`, `median_filter`, `exponential_moving_average` |
-| Padding a series at its ends | the `Padding` strategies (`edge`, `zero`, `reflect`, `none`) through `smoothing._pad`, `_reflect_index`; `_validate_window`, `_as_padding` for the arguments |
-| A `collections.deque(maxlen=…)` buffer | `Window[T]` |
-| `(x - mean) / std`, min–max scaling, clamping | `Standardize` (with `inverse`), `MinMaxScale`, `Clip` |
-| A list of steps applied in order, a base class for "things with `apply`" | `Pipeline`, `chain`, a pipeline composed with the `or` operator (`Pipeline.__or__`); satisfy the `Transform` protocol structurally |
-| A new exception for bad input or a missing `fit` | `ValidationError`, `EmptySeriesError`, `NotFittedError` |
-| `time.perf_counter()` bookkeeping | `timer()` → `Elapsed` |
-| Reading numbers from a file or stdin for the CLI, a non-negative-int option | `cli._read_values` (finite values only), `cli._non_negative_int` |
+| A bilinear or trilinear read, `jnp.searchsorted` on a grid axis, `map_coordinates` | functax's `Linear().fit(RectilinearGrid(...), ...)` with `Policies` |
+| `jnp.histogram`, `segment_sum` into cells, a deposit, a cloud-in-cell weight | functax's `Binning` |
+| A cell area or volume from edges | `functax.quad.cell_area` |
+| An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
+| `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
+| A second loop for a new kind of particle | a `ParticleStep`; the one loop runs any of them |
+| A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
+| A hand-written Earth radius or a great-circle distance | geophysix (from Wave 3) |
+| `x.T`, `x.reshape(...)`, `x[:, None]`, `jnp.sum(x, axis=…)` | `einx.rearrange`, `einx.sum` and friends |
+| A new exception for a bad argument | `ValidationError` |
 
 ## The contracts
 
-<!-- template-example: the contracts below are the example's extension points; replace them with your package's. -->
-
 Everything composes because it keeps these contracts; the tests in "What enforces them" check most of them.
 
-### 1. Public functions
+### 1. The conventions
 
-- **Validate once, at the boundary.** A public function coerces and checks its inputs through the `utils` validators (`require_non_empty(series)`, `require_positive(window, name="window")`) and raises `ValidationError` (or `EmptySeriesError`) whose message names the argument: `'window' must be a positive integer, got 0`. Internal helpers assume well-formed data.
-- **Pure.** Return a **new** `list[float]` and never mutate the input (the `SMOOTHERS` tests in `tests/test_smoothing.py`, `test_does_not_mutate_input` in the stats and transforms tests). Any `collections.abc.Sequence` of numbers is accepted (`Series`).
-- **Honest numerics.** `math.fsum` for sums; an overflow becomes `inf`, not an exception, when the true result is not representable (see `summarize`); degenerate input (a constant series to standardise, `ddof` ≥ the count) raises `ValidationError` rather than returning `nan`.
-- **Documented.** Google-style docstring in the `python-style` layout: a one-line summary, the defining equation in Unicode (`eman-style-math`, no `$…$` in docstrings), `Algorithm:` for a function that implements a method, `Args:` (meaning and symbol, no type), `Returns:`, `Raises:` and an executable `Examples:` block.
+These are the decisions of [#14](https://github.com/jejjohnson/tracerax/issues/14), where the measurements behind them are.
 
-### 2. Transforms
+- **Scope.** tracerax owns a calculation whose state is a set of positions carried forward in time, or that analyses such positions. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's.
+- **Dependencies.** JAX, Equinox, einx, jaxtyping, diffrax, `functax[jax]` and integrix are required; geophysix joins in Wave 3; gridax is the `gridax` extra. No other stack library is imported: gaussx arrives through integrix and is never imported directly.
+- **JAX only.** Pure functions and Equinox modules. Nothing inside the library calls `jax.jit`; the caller jits once, at the top.
+- **Shapes are static.** Particles are masked, never dropped, and a masked particle keeps finite values.
+- **Units.** SI: metres, seconds, m s⁻¹, kg. Positions are metres in a local frame the caller chooses, because float32 cannot resolve a 1 cm step 10⁶ m from the origin.
+- **Axis order.** Position columns are (x, y) or (x, y, z), and cells follow the same order. A gridded velocity keeps its fields as (time, z, y, x) or (time, y, x).
+- **Velocity.** A callable `velocity(t, position)`, the argument order of diffrax and `integrix.march`, returning one velocity per particle. `t` is a scalar or one time per particle.
+- **Steps.** What moves a state is a `ParticleStep` ([#16](https://github.com/jejjohnson/tracerax/issues/16)): deterministic, Langevin, random displacement or, from Wave 3, inertial. One loop ([#20](https://github.com/jejjohnson/tracerax/issues/20)) runs any of them.
+- **Time.** Seconds from an epoch the caller chooses near the run, because float32 resolves only 128 s at Unix-epoch seconds. A run has a start `t0`, which may be traced, and a static signed `duration`, negative for a backward run. Inside a run, times are offsets from `t0`.
+- **Randomness.** One key per run, passed in and split up front into one key per step, or the noise itself, one array per step. Nothing reads a global seed.
+- **Precision.** The output dtype follows the positions' dtype; nothing enables x64.
 
-- A transform satisfies `Transform`: `apply(series) -> list[float]`, returning a new list. No base class.
-- **Stateless** (`Clip`, `MovingAverage`): `@dataclass(frozen=True, slots=True)`; `fit` returns `self` unchanged; `fit_apply` is `apply`.
-- **Fitted** (`Standardize`, `MinMaxScale`): `@dataclass(slots=True)`; learned state in `init=False` trailing-underscore fields defaulting to `None`; `fit(series)` validates, sets them and returns `self` (so it chains); `apply` before `fit` raises `NotFittedError("<Name> is not fitted; call .fit(series) first")`, never a silent identity; `fit_apply` is `fit(series).apply(series)`.
-- Constructor arguments that can be checked without data are validated in `__post_init__` (`ValidationError`), as `MinMaxScale`, `Clip` and `MovingAverage` do; the rest are checked by `fit`.
-- `Pipeline` fits each step on the previous step's output, calls `fit` only when the step has a callable one, and rejects a step without a callable `apply`; `|` returns a new pipeline.
+### 2. Public functions and modules
 
-### 3. The CLI
+- **Validate once, at the boundary.** A public function or module checks its inputs and raises `ValidationError`, whose message names the argument and the bad value. Static checks go in `__check_init__`; checks on traced arrays use `eqx.error_if`, so they survive `jit`. Internal helpers assume well-formed data.
+- **Pure and traceable.** Never mutate an input. A function runs under `jit`, `vmap` and `grad` with static shapes.
+- **Documented.** Google-style docstring in the `python-style` layout: a one-line summary, the defining equation in Unicode (`eman-style-math`, no `$…$` in docstrings), `Algorithm:` for a function that implements a method, `Args:` (meaning, symbol and unit, no type), `Returns:`, `Raises:` and an executable `Examples:` block whose outputs are shapes, `allclose` booleans or reprs, never raw floats.
 
-- A subcommand is a subparser in `build_parser()` plus a `_run_<name>(args, out, stdin) -> int` handler registered in the `handlers` dict in `main`.
-- Write only to the injected `out` stream; read numbers through `_read_values`; validate options with an `argparse` `type=` (as `_non_negative_int` does), so a bad option is a usage error (exit 2).
-- Library errors propagate as `MypackageError`, which `main` reports as `error: …` on `err` with exit status 1 (`EXIT_ERROR`); `OSError` likewise. Never call `sys.exit` or `print` in a handler.
+### 3. Exceptions
 
-### 4. Exceptions
-
-- Every error derives from `MypackageError` **and** the closest standard-library exception, so `except ValueError` keeps working. A new error goes into `exceptions.py`, is exported, and joins the parametrised lists in `tests/test_exceptions.py`.
+- Every error derives from `TraceraxError` and from the closest standard-library exception: `ValidationError` is a bad argument and also a `ValueError`. A new error goes into `exceptions.py`, is exported, and joins the list in `tests/test_exceptions.py`.
 
 ### The public API
 
-- Export a public name from its module's `__all__` and from `src/mypackage/__init__.py` (import and `__all__`); both stay sorted (ruff's `RUF022` and `test_all_is_sorted_and_unique` agree on the order).
-- A new module declares a sorted `__all__`, joins `SUBMODULES` in `tests/test_public_api.py`, and gets its own page in `docs/api/` (a `::: mypackage.<module>` block), a `nav` entry in `mkdocs.yml` and a row in `docs/api/index.md`; a name on an existing module's page is picked up by its `:::` block.
+- Private code lives in `src/tracerax/_src/<module>/`; the public modules re-export it. Export a public name from its module's `__all__`; both stay in plain `sorted()` order, which `tests/test_public_api.py` checks (ruff's `RUF022` is off: its isort-style order differs). `src/tracerax/__init__.py` exports `__version__` and the exceptions only.
+- A new module declares a sorted `__all__`, joins `SUBMODULES` in `tests/test_public_api.py`, and gets its own page in `docs/api/` (a `::: tracerax.<module>` block), a `nav` entry in `mkdocs.yml` and a row in `docs/api/index.md`; a name on an existing module's page is picked up by its `:::` block.
 - Run `uv run poe capabilities` after any public API change.
-- Link prose to the API by the **top-level** name (``[`summarize`](xref:api#mypackage.summarize)``), see "Documentation".
+- Link prose to the API by the public name (``[`TraceraxError`](xref:api#tracerax.TraceraxError)``), see "Documentation".
 
 ## What enforces them
 
 Most rules here are tests, so CI tells you when one breaks. Read a test's docstring before changing what it checks.
 
-<!-- template-example: the test files and registries are the example's; list your own. -->
-
 | Test | Enforces |
 |---|---|
 | `tests/test_public_api.py` | `__all__` sorted, unique and importable; `SUBMODULES` is exactly the set of modules; every submodule declares a sorted `__all__`; the `py.typed` marker ships; `__version__` is dotted |
 | `tests/test_capabilities.py` | `docs/api/capabilities.md` is current; no name is bound to two different objects |
-| `--doctest-modules` on `src/mypackage` (`addopts`) | Every docstring `Examples:` block runs and prints what it says |
-| `tests/test_smoothing.py` (`SMOOTHERS`) | Smoothers never mutate their input, return a new list, leave constants unchanged |
-| `tests/test_transforms.py` (`TestProtocols`, `TestPipeline`) | Every transform satisfies `Transform` (fitted ones `Fittable`); `NotFittedError` before `fit`; sequential fitting; no mutation |
-| `tests/test_exceptions.py` | The hierarchy: every error is a `MypackageError` and its stdlib base |
-| `tests/test_cli.py` | Injected streams, exit codes 0 / 1 / 2, finite-only input, the `[project.scripts]` entry point |
+| `--doctest-modules` on `src/tracerax` (`addopts`) | Every docstring `Examples:` block runs and prints what it says |
+| `tests/test_exceptions.py` | The hierarchy: every error is a `TraceraxError` and a standard-library exception |
 | `tests/test_build_docs.py` | The two-tool docs pipeline: inventory parsing, anchor repair, link checking, the inventory port and the absolute nav URL in `docs/myst.yml`, the files copied to the site root (`ROOT_FILES`) |
-| `tests/test_plugin_skill.py` | The downstream plugin's worked example runs and its quoted numbers hold; every name the plugin skill and reviewer mention exists |
-| `[tool.coverage.report] fail_under = 90` | Coverage of `src/mypackage` in every coverage-enabled run (CI, `uv run poe test-cov`) |
-| `strict_markers = true` | Only the registered tier markers (`slow`, `integration`) exist |
-| ruff (`select = E, F, I, UP, B, SIM, RUF`), ty | Lint (the whole repo, notebook code cells included), format, types on `src/mypackage` and `scripts` |
+| `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; tests marked `gridax` are skipped when it is not installed |
+| `tests/test_import_isolation.py` | Importing every module loads no stack library but functax, integrix and their own dependencies, and not gridax even when it is installed |
+| CI job "with the gridax extra" | The `gridax` extra installs, and the tests pass with it |
+| `uv sync --locked` in every test job | `uv.lock` matches the pins in `pyproject.toml` |
+| `[tool.coverage.report] fail_under = 90` | Coverage of `src/tracerax` in every coverage-enabled run (CI, `uv run poe test-cov`) |
+| `strict_markers = true` | Only the registered markers (`slow`, `integration`, `gridax`) exist |
+| ruff (`select = E, F, I, UP, B, SIM, RUF`), ty | Lint (the whole repo), format, types on `src/tracerax` and `scripts` |
+
+Each function brings four tests, as `add-particle-function` lays out:
+
+1. **Oracle**: a closed form or stored plumax values, at a stated tolerance, in float64.
+2. **Transforms**: eager, `jit` and `vmap` over a batch of one agree.
+3. **Gradients**: autodiff against central differences at a fixed key, where the function is smooth.
+4. **Masks**: an inactive or unreleased particle changes nothing and stays finite.
+
+The harness for them is [#15](https://github.com/jejjohnson/tracerax/issues/15).
 
 ## Recipes
 
 Step-by-step recipes for the common jobs live as plain Markdown in `.claude/skills/<name>/SKILL.md` (Claude Code loads them automatically; any agent can read and follow them), and two read-only review checklists in `.claude/agents/`:
 
-<!-- template-example: this table only; `add-function`, `add-transform`, `add-cli-command` and `mypackage-review` are the example package's, replace them with your extension points. -->
-
 | Job | Recipe |
 |---|---|
-| Turn a fresh copy of the template into your project | `adopt-template` |
-| Add a public function, class or module | `add-function` |
-| Add a transform (the `Transform` protocol) | `add-transform` |
-| Add a CLI subcommand or option | `add-cli-command` |
+| Add a function to a public module | `add-particle-function` |
 | Add or update a guide page (MyST prose) | `add-guide-page` |
 | Add or update an example notebook | `add-notebook` |
 | Verify before a PR | `pre-pr-check` |
-| Review a change | `mypackage-review` (+ the read-only `.claude/agents/reuse-reviewer.md` and `correctness-reviewer.md`) |
+| Review a change | `tracerax-review` (+ the read-only `.claude/agents/reuse-reviewer.md` and `correctness-reviewer.md`, the Lagrangian reviewer) |
 | Write a squash commit message | `squash-commit` |
 | Open or link GitHub issues | `create-gh-issue`, `link-gh-issues` (templates in `.github/ISSUE_TEMPLATE/`; `uv run poe gh-labels`, `gh-sub`, `gh-block`, `gh-show`) |
 
-<!-- template-example: this paragraph only; the plugin describes the example package. -->
-
-Downstream users get the package's guidance through the Claude Code plugin in `plugins/mypackage/` (published by `.claude-plugin/marketplace.json`) and `docs/llms.txt` (copied to the site root by `ROOT_FILES` in `scripts/build_docs.py`); see `docs/agents.md`. When the public API or the headline usage changes, update `plugins/mypackage/skills/series-analysis-with-mypackage/` too: `tests/test_plugin_skill.py` runs its worked example, checks the numbers its prose quotes, and checks that every `mp.X` / `mypackage.X` it and the plugin reviewer name still exists.
 
 ## Working in the repo
 
@@ -167,7 +162,7 @@ uv run poe test             # every test + doctests, no coverage (fast)
 uv run poe test-cov         # the same with coverage and the 90 % gate (what CI runs)
 uv run poe lint             # ruff check .   (entire repo)
 uv run poe format           # ruff format . && ruff check --fix .
-uv run poe typecheck        # ty check src/mypackage scripts (what CI runs)
+uv run poe typecheck        # ty check src/tracerax scripts (what CI runs)
 uv run poe check            # lint + format-check + typecheck + test-cov (everything CI checks)
 uv run poe capabilities     # regenerate docs/api/capabilities.md
 uv run poe docs             # build both docs halves into public/ and check every link
@@ -178,12 +173,12 @@ uv run poe precommit        # every pre-commit hook on every file
 uv run poe build            # wheel + sdist into dist/
 ```
 
-Extra arguments after a task name are passed to its command (`uv run poe test tests/test_stats.py -k summarize`).
+Extra arguments after a task name are passed to its command (`uv run poe test tests/test_exceptions.py -k base`).
 
 `addopts` turns coverage on, and a partial run never reaches the 90 % gate, so pass `--no-cov` when running part of the suite:
 
 ```bash
-uv run pytest --no-cov tests/test_stats.py::TestSummarize::test_known_values -v
+uv run pytest --no-cov tests/test_exceptions.py -v
 ```
 
 ### Test tiers
@@ -194,15 +189,13 @@ The markers are registered in `pyproject.toml` (`strict_markers = true`):
 - **`@pytest.mark.slow`:** a test over ~1 s (a large sweep, a long fit). For a parametrised test, mark only the expensive cases (`pytest.param(..., marks=pytest.mark.slow)`).
 - **`@pytest.mark.integration`:** end-to-end workflows, optional dependencies, external tools.
 
-CI ("Tests", `ci.yml`) runs every tier with coverage on Python 3.12 and 3.13 (`uv run pytest -v`). Select the fast tier with `uv run pytest -m "not slow and not integration"`; when the slow tiers grow, give them a CI job of their own rather than dropping them.
+CI ("Tests", `ci.yml`) runs every tier with coverage on Python 3.12 and 3.13 (`uv run pytest -v`), and again with the `gridax` extra. Select the fast tier with `uv run pytest -m "not slow and not integration"`; when the slow tiers grow, give them a CI job of their own rather than dropping them. `gridax` is not a tier: it says what a test needs.
 
 ### Tests that assert on random draws
 
-<!-- template-example: this paragraph only. The example draws no random numbers; its tests use fixed fixtures in tests/conftest.py. -->
+tracerax draws random numbers from a key the caller passes, and its results are then samples. A failing `hypothesis` example is pinned with an explicit `@example` so it keeps being run.
 
-`mypackage` draws no random numbers; its tests use the fixed series in `tests/conftest.py`.
-
-- **Incidental randomness** (any draw would do): seed it (`random.Random(0)`, `numpy.random.default_rng(0)`, a fixed key) so a failure reproduces.
+- **Incidental randomness** (any draw would do): seed it (`jax.random.key(0)`, `numpy.random.default_rng(0)`) so a failure reproduces.
 - **Sampling behaviour under test** (a Monte Carlo estimate, a statistical property): bound the statistic by its own sampling distribution (a number of standard errors, a test's p-value floor), not by a tolerance tuned on one draw, and say in a comment where the bound comes from.
 
 ### Before every commit
@@ -210,9 +203,9 @@ CI ("Tests", `ci.yml`) runs every tier with coverage on Python 3.12 and 3.13 (`u
 All of these must pass, from the repo root:
 
 1. `uv run poe test`: zero failures (doctests included).
-2. `uv run --group lint ruff check .`: the **entire** repo, which includes `tests/`, `scripts/` and the code cells of `docs/notebooks/*.ipynb`. Never lint a subdirectory: `ruff check src/mypackage/` misses errors CI catches.
+2. `uv run --group lint ruff check .`: the **entire** repo, which includes `tests/`, `scripts/` and the code cells of `docs/notebooks/*.ipynb`. Never lint a subdirectory: `ruff check src/tracerax/` misses errors CI catches.
 3. `uv run --group lint ruff format --check .`
-4. `uv run poe typecheck` (`ty check src/mypackage scripts`, as CI runs it).
+4. `uv run poe typecheck` (`ty check src/tracerax scripts`, as CI runs it).
 5. After changing a public API: `uv run poe capabilities`, and the `docs/api` page.
 6. After changing docs, docstrings, `mkdocs.yml` or `docs/myst.yml`: `uv run poe docs` (or at least `uv run poe docs-api` when only docstrings changed).
 7. After changing a dependency: `uv lock`, and commit `uv.lock`.
@@ -241,13 +234,18 @@ These are the `karpathy-coding-principles` skill in four lines. When you suggest
 - One package base error; subclasses are named by what failed.
 - Extract only real duplicates (code that must change together); code that merely looks alike stays separate.
 
-Its JAX/Equinox rules apply when the package uses JAX: logic under `pkg/_src/` with public modules that only re-export, jaxtyping with the shared dim vocabulary, einx instead of `axis=` / `.T` / `reshape` / `[:, None]`, lineax for solves, arrays in `eqx.Module`s with `__check_init__` and `eqx.error_if`, `key` keyword-only and last, no silent dtype casts, `get_config()` / `from_config()`, and the four tests per public forward function (closed-form oracle, hypothesis properties, gradient check, transform invariance).
+Its JAX/Equinox rules apply in full:
 
-<!-- template-example: this paragraph only; it records where the stdlib example departs from python-style on purpose. -->
+- **Layout.** Logic lives only under `tracerax/_src/`; a public module only re-exports. One concept per file: a protocol and its implementations share a file.
+- **Types and shapes.** Every array argument and return is annotated with jaxtyping and named dims; shapes live in types, never in comments. Dims come from the shared vocabulary of `python-style`, and tracerax adds `particle`, `dim` (the 2 or 3 position columns) and `save`.
+- **Array operations.** einx instead of `axis=`, `.T`, `reshape` and `[:, None]`.
+- **Modules.** Arrays live in `eqx.Module`s and are always leaves, never static fields. Fixed parameters are fields; variables are arguments of `__call__`.
+- **Keys** are keyword-only, named `key`, last, and split once at the top.
+- **Precision.** No silent dtype cast; a constant is created in the input's dtype or is a Python scalar.
 
-The bundled example is pure standard library, so it keeps `dataclasses` (`slots=True`) where `python-style` uses `eqx.Module`, makes every error inherit the closest standard-library exception as well as the package base (an open question in `python-style`, settled here), and lets doctests print exact floats such as `2.5`.
+Doctests print shapes, `allclose` booleans or reprs, never raw floats.
 
-**CLIs and scripts** use `cyclopts` for arguments and `loguru` for output; never argparse, click, typer, progress `print`s or stdlib `logging`. For a repo script they are in the `dev` group already; for a package CLI they are runtime dependencies and need the usual discussion. Two exceptions remain: the example's `mypackage` CLI uses `argparse` to keep the package dependency-free (`template-example`), and `scripts/capabilities.py` still uses `argparse` and `print`; move it over when you next change it (`scripts/build_docs.py` shows the pattern: a `cyclopts.App` with `@app.default`, and `loguru` for every message).
+**CLIs and scripts** use `cyclopts` for arguments and `loguru` for output; never argparse, click, typer, progress `print`s or stdlib `logging`. For a repo script they are in the `dev` group already; tracerax has no CLI. `scripts/capabilities.py` still uses `argparse` and `print`; move it over when you next change it (`scripts/build_docs.py` shows the pattern: a `cyclopts.App` with `@app.default`, and `loguru` for every message).
 
 ### Maths notation
 
@@ -284,7 +282,7 @@ The maintainer's skills live in [jejagents](https://github.com/jejjohnson/jejage
 ## Git, commits and pull requests
 
 - **Never** push to or merge into `main` unless explicitly told to ("push to main", "merge to main"). Work on a feature branch and commit locally; never run `git push` unless asked. "Merge the branch" means push the feature branch, not merge into `main`. Confirm before any action that affects a shared branch.
-- Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org/) with a lowercase subject (`feat(stats): add …`); CI validates PR titles (`conventional-commits.yml`). Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Breaking changes use `!` and a `BREAKING CHANGE:` footer.
+- Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org/) with a lowercase subject (`feat(advect): add …`); CI validates PR titles (`conventional-commits.yml`). Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Breaking changes use `!` and a `BREAKING CHANGE:` footer.
 - **No AI attribution.** No `Co-Authored-By:` trailer for an AI on any commit and no "Generated with …" line in a PR description, unless the maintainer asks for one; keep human co-authors' trailers.
 - **PR descriptions are for a human who did not watch the work:** why first, a small before/after table, what stays the same, one or two bullets on how it was tested. Label behaviour as "Today (bug): …" and "After this PR: …". Link review comments rather than naming reviewers.
 - Write one `Closes #N` line per issue.
@@ -329,8 +327,8 @@ The docs are built by **two tools** and deployed as one site (`docs/README.md` h
 `uv run poe docs` runs `scripts/build_docs.py`: it builds the API with `zensical build --strict` (Zensical reads `mkdocs.yml`), serves `site/` on port 8910 so mystmd can read its `objects.inv` (mystmd loads inventories only over http), runs `myst build --html --strict`, rewrites the localhost API URLs to `/reference/`, repairs anchors lowercased by mystmd's `$`-expansion bug, and fails if any internal link in the assembled `public/` site does not resolve. mystmd is a Node CLI (`npm install -g mystmd`), not a uv dependency; if its theme download is blocked, `docs/README.md` says how to build against a local clone of the theme.
 
 - **Prose is MyST Markdown**, not MkDocs-Material syntax: `:::{note}`, `:::{tab-set}`, `:::{dropdown}` directives, not `!!!` / `===` / `???`.
-- **Link to the API** with the `xref:` protocol and the **top-level** exported name: ``[`summarize`](xref:api#mypackage.summarize)``, not `mypackage.stats.summarize` (mystmd lowercases `$`-abbreviated anchors; see `docs/README.md`). A missing target fails `myst build --strict`.
-- **URLs are flat**: a page's URL is its basename, with `_` turned into `-` (`guide/quickstart.md` → `/quickstart/`, `notebooks/smoothing_deep_dive.ipynb` → `/smoothing-deep-dive/`), so keep basenames unique across `docs/`, `docs/guide/` and `docs/notebooks/`; frontmatter `slug:` is ignored.
+- **Link to the API** with the `xref:` protocol and the **top-level** exported name: ``[`TraceraxError`](xref:api#tracerax.TraceraxError)``, not a deeper path (mystmd lowercases `$`-abbreviated anchors; see `docs/README.md`). A missing target fails `myst build --strict`.
+- **URLs are flat**: a page's URL is its basename, with `_` turned into `-` (`guide/quickstart.md` → `/quickstart/`, `notebooks/deep_dive.ipynb` → `/deep-dive/`), so keep basenames unique across `docs/`, `docs/guide/` and `docs/notebooks/`; frontmatter `slug:` is ignored.
 - **Site-nav URLs stay absolute** (`site.nav` in `docs/myst.yml`): the theme prefixes root-relative ones with `BASE_URL` a second time (`tests/test_build_docs.py` checks it).
 - **API pages** (`docs/api/*.md`) are MkDocs-format pages, built by Zensical (which runs only the plugins it supports and ignores the rest silently; check its plugin list before adding one): prose plus `:::` blocks, `!!!` admonitions, listed in the `nav` of `mkdocs.yml`; docstrings are Google style (`docstring_style: google`) with Unicode maths; maths in the API pages themselves goes through MathJax (`pymdownx.arithmatex`), with the `eman-style-math` macros loaded by `docs/api/javascripts/mathjax.js`.
 - **Notebooks** in `docs/notebooks/` are committed as executed `.ipynb` files, authored as jupytext percent `.py` and deleted after conversion; mystmd renders the stored outputs without re-executing, so each must be listed in the `docs/myst.yml` toc. Figures render inline with `plt.show()`: no `savefig`, no committed PNGs. `notebooks/` at the root holds scratch notebooks, outside the docs. Full standards: `.github/instructions/docs-examples.instructions.md`.

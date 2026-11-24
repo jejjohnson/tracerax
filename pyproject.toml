@@ -1,13 +1,13 @@
 [project]
-name = "mypackage"
-version = "0.1.7"
-description = "My short description for my project."
+name = "tracerax"
+version = "0.0.1"
+description = "Lagrangian particles in JAX: advection, dispersion, deposits, footprints and trajectory analysis."
 authors = [
     {name="J. Emmanuel Johnson", email="jemanjohnson34@gmail.com"},
 ]
 license = { file = "LICENSE" }
 readme = "README.md"
-keywords = []
+keywords = ["jax", "lagrangian", "particles", "advection", "dispersion", "geoscience"]
 requires-python = ">=3.12"
 classifiers = [
     "Topic :: Scientific/Engineering",
@@ -19,28 +19,49 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Development Status :: 2 - Pre-Alpha",
 ]
-dependencies = []
+dependencies = [
+    "jax>=0.10",
+    "equinox>=0.13.8",
+    "jaxtyping>=0.3",
+    "einx>=0.4.3",
+    # integrix fixes the same minor version.
+    "diffrax>=0.7.2,<0.8",
+    # Unpublished siblings resolve from git, by tag. The two move together:
+    # integrix v0.0.10 fixes functax v0.0.13, and uv reports "conflicting URLs"
+    # for any other. Both are written without .git, as integrix writes them.
+    "functax[jax] @ git+https://github.com/jejjohnson/functax@v0.0.13",
+    "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.10",
+]
+
+[project.optional-dependencies]
+# Grids and masks, without gridax's own `jax` extra, which fixes functax
+# v0.0.11. gridax requires Python below 3.14.
+gridax = ["gridax>=0.3; python_version < '3.14'"]
 
 [project.urls]
-Repository = "https://github.com/jejjohnson/mypackage"
-
-[project.scripts]
-mypackage = "mypackage.cli:main"
+Repository = "https://github.com/jejjohnson/tracerax"
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "pre-commit>=4.6.0",
+    "pre-commit>=4.7.0",
     "poethepoet>=0.49.0",
     "cyclopts>=5.3.3",
-    "loguru>=0.7.3",
+    "loguru>=0.8.0",
+]
+test = [
+    # References, never imported at runtime (SciPy arrives with JAX anyway).
+    "scipy>=1.14",
+    "hypothesis>=6.100",
+    # The runtime checker behind jaxtyping's import hook in tests/conftest.py.
+    "beartype>=0.19",
 ]
 lint = [
-    "ruff>=0.15.22",
+    "ruff>=0.17.5",
 ]
 typecheck = [
-    "ty>=0.0.83",
+    "ty>=0.0.104",
 ]
 docs = [
     # The prose half of the site is built by mystmd, a Node CLI installed with
@@ -48,10 +69,10 @@ docs = [
     # Zensical (the successor to Material for MkDocs, which reached end of life
     # on 2026-11-05) builds only the API reference from mkdocs.yml; its
     # `objects.inv` is what lets the MyST prose cross-reference into it.
-    "zensical>=0.0.74",
+    "zensical>=0.1.0",
     "mkdocstrings[python]>=1.0.6",
     "jupytext>=1.19.6",
-    "ipykernel>=7.3.0",
+    "ipykernel>=7.4.0",
     "nbconvert>=7.17.2",
     # matplotlib + watermark used by the example notebooks during local
     # re-execution. The guarded watermark cell in each notebook no-ops
@@ -65,12 +86,23 @@ docs = [
     "pygments>=2.21.0,<2.22",
 ]
 
+[tool.uv]
+default-groups = ["dev", "test"]
+
+[tool.uv.sources]
+# Not on PyPI: the `gridax` extra resolves from git, by tag.
+gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.0" }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# functax and integrix are git references until they are published.
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/mypackage"]
+packages = ["src/tracerax"]
 
 [tool.ruff]
 target-version = "py312"
@@ -78,10 +110,13 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = ["E402", "E721", "E731", "E741"]
+# F722 reads jaxtyping's dimension strings as annotations, and UP037 unquotes them.
+# RUF022 sorts __all__ isort-style (constants first); tests/test_public_api.py
+# keeps it in plain sorted() order instead.
+ignore = ["E402", "E721", "E731", "E741", "F722", "RUF022", "UP037"]
 # Docstrings and comments carry Unicode maths (eman-style-math, "Maths
 # notation" in AGENTS.md), so the maths glyphs that look like ASCII are allowed.
-allowed-confusables = ["−", "×", "∗", "∣", "α", "γ", "ι", "ν", "ο", "ρ", "σ", "υ"]
+allowed-confusables = ["–", "−", "′", "×", "∗", "∣", "α", "γ", "ι", "ν", "ο", "ρ", "σ", "υ", "ℓ"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -100,25 +135,28 @@ docstring-code-line-length = 72
 python-version = "3.12"
 
 [tool.pytest.ini_options]
-# `src/mypackage` is a testpath so that --doctest-modules collects the
+# `src/tracerax` is a testpath so that --doctest-modules collects the
 # ``Examples:`` blocks in every Google-style docstring. They are executable
 # documentation: if an example in the docs goes stale, CI fails.
-testpaths = ["tests", "src/mypackage"]
+testpaths = ["tests", "src/tracerax"]
+# tests/ is importable from every test file, for the shared helpers there.
+pythonpath = ["tests"]
 # Test tiers (see "Test tiers" in AGENTS.md). CI runs every tier.
 strict_markers = true
 markers = [
     "slow: takes over ~1 s; deselect with -m 'not slow'",
     "integration: end-to-end workflows, optional dependencies, external tools",
+    "gridax: needs the gridax extra; skipped when it is not installed (tests/conftest.py)",
 ]
 addopts = """\
     --doctest-modules \
-    --cov=src/mypackage \
+    --cov=src/tracerax \
     --cov-report=term-missing \
     --cov-report=xml:coverage.xml\
 """
 
 [tool.coverage.run]
-source = ["src/mypackage"]
+source = ["src/tracerax"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
@@ -135,7 +173,7 @@ exclude_also = [
 #   uv run poe            # list every task with its help text
 #   uv run poe install    # first run: `uv run` syncs the dev group, so poe exists
 # Extra arguments are passed through to the underlying command, e.g.
-#   uv run poe test tests/test_stats.py -k summarize
+#   uv run poe test tests/test_exceptions.py -k base
 # ---------------------------------------------------------------------------
 [tool.poe]
 # Tasks call `uv run --group …` themselves, exactly as CI does, so poe must not
@@ -146,7 +184,7 @@ envfile = { optional = ".env" }
 
 [tool.poe.env]
 # Overridable from .env or the shell.
-PKGROOT.default = "src/mypackage"
+PKGROOT.default = "src/tracerax"
 TYPECHECK_EXTRA.default = "scripts"
 
 # --- Meta -------------------------------------------------------------------

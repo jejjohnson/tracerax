@@ -1,6 +1,6 @@
 ---
 name: reuse-reviewer
-description: Read-only reviewer that checks a diff for re-implemented functionality — new helpers, validators, statistics, filters, padding rules, buffers, transforms, pipeline logic, exceptions or CLI parsing that duplicate a public name in docs/api/capabilities.md or a shared private helper listed in AGENTS.md. Use proactively on any change that adds functions, classes or modules, before committing or during code review.
+description: Read-only reviewer that checks a diff for re-implemented functionality — new helpers, interpolation weights, bin indices, Butcher tableaux, checkpointed scans, particle loops, exceptions that duplicate a public name in docs/api/capabilities.md, a shared private helper listed in AGENTS.md, or a function functax, integrix or diffrax already has. Use proactively on any change that adds functions, classes or modules, before committing or during code review.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -16,17 +16,15 @@ The diff (`git diff <base>...HEAD`, default base `main`) or the files / commit r
 2. For each, search for an existing equivalent:
    - `docs/api/capabilities.md` — every public name, grouped by the module that defines it (and the `UPSTREAM` libraries, if `scripts/capabilities.py` lists any);
    - the private helpers in the "Reuse before you write" table of `AGENTS.md`;
-   - a grep of `src/` for the key operation (`fsum`, `sorted(`, `deque(`, `float(`, the error-message text).
+   - a grep of `src/` for the key operation (`searchsorted`, `map_coordinates`, `histogram`, `segment_sum`, `jax.checkpoint`, `lax.scan`, `stop_gradient`, `6371`, the error-message text).
 3. Also flag, wherever they appear in the diff:
-   <!-- template-example: these are the example package's usual re-implementations; replace them with your package's. -->
-   - hand-written coercion or validation (`[float(v) for v in series]`, `if not series`, `if window <= 0`, an `isinstance(x, int)` check) → `as_floats`, `require_non_empty`, `require_positive`;
-   - a mean, variance, standard deviation, quantile, median or z-score → `summarize` / `Summary`, `quantile`, `zscores`, `RunningStats`;
-   - a rolling mean or median, an exponential smoother, end padding or reflection → `moving_average`, `median_filter`, `exponential_moving_average`, `Padding` and `smoothing._pad`;
-   - a `deque(maxlen=…)` buffer → `Window`;
-   - standardising, min–max scaling, clamping, or a loop applying steps in order → `Standardize`, `MinMaxScale`, `Clip`, `Pipeline` / `chain`;
-   - a base class or registry for transforms → the structural `Transform` protocol;
-   - a new exception class for invalid input or a missing `fit` → `ValidationError`, `EmptySeriesError`, `NotFittedError`;
-   - number parsing or stream handling in the CLI → `cli._read_values`, the `run`-style injected streams of `main`;
+   - an interpolation weight, a bin index, a deposit, a cell area or a quadrature rule → functax (`Interpolant`, `Binning`, `functax.quad`);
+   - an RK stage, a Butcher tableau, a checkpointed or truncated scan → integrix or diffrax;
+   - a second particle loop, or a step with its own release or mask logic → a `ParticleStep` run by the one loop;
+   - a turbulence closure, a mixing length, a plume or a source inversion → plumax, passed in as an argument;
+   - a hand-written Earth radius or great-circle distance → geophysix (from Wave 3);
+   - an alias that only combines functions the stack has → delete it and show the combination in the docs;
+   - a new exception class for a bad argument → `ValidationError`;
    - a public name that duplicates another public name for a different object (`tests/test_capabilities.py` will fail on it).
 
 ## Report

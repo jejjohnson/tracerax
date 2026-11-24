@@ -8,55 +8,37 @@ from __future__ import annotations
 
 import pytest
 
-from mypackage import (
-    EmptySeriesError,
-    MypackageError,
-    NotFittedError,
-    Standardize,
-    ValidationError,
-    summarize,
-)
+from tracerax import TraceraxError, ValidationError
 
 
-@pytest.mark.parametrize(
-    "error",
-    [ValidationError, EmptySeriesError, NotFittedError],
-)
+SUBCLASSES = [ValidationError]
+
+
+@pytest.mark.parametrize("error", SUBCLASSES)
 def test_every_error_derives_from_the_base(error: type[Exception]) -> None:
-    assert issubclass(error, MypackageError)
+    assert issubclass(error, TraceraxError)
 
 
-@pytest.mark.parametrize(
-    ("error", "stdlib_base"),
-    [
-        (ValidationError, ValueError),
-        (EmptySeriesError, ValueError),
-        (NotFittedError, RuntimeError),
-    ],
-)
-def test_errors_alias_the_closest_stdlib_exception(
-    error: type[Exception], stdlib_base: type[Exception]
-) -> None:
-    assert issubclass(error, stdlib_base)
+def test_the_base_is_not_a_value_error() -> None:
+    """A future error may be a `TypeError`, so only the subclasses say which."""
+    assert not issubclass(TraceraxError, ValueError)
 
 
-def test_empty_series_error_specialises_validation_error() -> None:
-    assert issubclass(EmptySeriesError, ValidationError)
+@pytest.mark.parametrize("error", SUBCLASSES)
+def test_subclasses_are_caught_as_value_errors(error: type[Exception]) -> None:
+    with pytest.raises(ValueError):
+        raise error("boom")
 
 
 def test_a_single_except_clause_catches_the_package() -> None:
-    caught: list[MypackageError] = []
-    for call in (lambda: summarize([]), lambda: Standardize().apply([1.0])):
+    caught: list[TraceraxError] = []
+    for error in SUBCLASSES:
         try:
-            call()
-        except MypackageError as err:
+            raise error("boom")
+        except TraceraxError as err:
             caught.append(err)
-    assert len(caught) == 2
-    assert isinstance(caught[0], EmptySeriesError)
-    assert isinstance(caught[1], NotFittedError)
+    assert [type(err) for err in caught] == SUBCLASSES
 
 
-def test_messages_name_the_offending_argument() -> None:
-    with pytest.raises(EmptySeriesError) as excinfo:
-        summarize([])
-    assert "'series'" in str(excinfo.value)
+def test_subclasses_have_a_docstring() -> None:
+    assert all(error.__doc__ for error in SUBCLASSES)
