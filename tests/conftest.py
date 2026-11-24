@@ -12,6 +12,7 @@ import importlib.util
 
 import jax
 import pytest
+from hypothesis import settings
 from jaxtyping import install_import_hook
 
 
@@ -19,6 +20,10 @@ jax.config.update("jax_enable_x64", True)
 # Installed before pytest imports tracerax for doctest collection, so every
 # tracerax module imported afterwards is checked with beartype.
 install_import_hook("tracerax", "beartype.beartype")
+# The first example of a property test compiles, so a time limit per example
+# fails on the compiler and not on the code.
+settings.register_profile("jax", deadline=None)
+settings.load_profile("jax")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
