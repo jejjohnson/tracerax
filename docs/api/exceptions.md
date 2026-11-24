@@ -1,17 +1,13 @@
 # Exceptions
 
-Every error raised by the package derives from
-[`MypackageError`][mypackage.MypackageError] *and* from the closest
-standard-library exception.
+Every error raised by the package derives from [`TraceraxError`][tracerax.TraceraxError], and from the closest standard-library exception, so a caller who knows nothing of the package still catches it.
 
 ```mermaid
 graph TD
-    E[Exception] --> M[MypackageError]
-    V[ValueError] --> VE[ValidationError]
-    M --> VE
-    VE --> ES[EmptySeriesError]
-    R[RuntimeError] --> NF[NotFittedError]
-    M --> NF
+    E[Exception] --> T[TraceraxError]
+    E --> V[ValueError]
+    T --> A[ValidationError]
+    V --> A
 ```
 
-::: mypackage.exceptions
+::: tracerax.exceptions

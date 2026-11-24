@@ -32,7 +32,7 @@ def make_inventory(entries: list[str]) -> bytes:
     """Build a minimal Sphinx v2 inventory payload from raw entry lines."""
     header = (
         b"# Sphinx inventory version 2\n"
-        b"# Project: mypackage\n"
+        b"# Project: tracerax\n"
         b"# Version: 0.0.0\n"
         b"# The remainder of this file is compressed using zlib.\n"
     )
@@ -44,20 +44,20 @@ class TestParseInventory:
     def test_reads_entries(self) -> None:
         data = make_inventory(
             [
-                "mypackage.Clip py:class 2 api/transforms/#mypackage.transforms.Clip -",
-                "mypackage.summarize py:function 2 api/stats/#mypackage.stats.summarize"
-                " -",
+                "tracerax.Clip py:class 2 api/transforms/#tracerax.transforms.Clip -",
+                "tracerax.summarize py:function 2 api/stats/"
+                "#tracerax.stats.summarize -",
             ]
         )
         entries = build_docs.parse_inventory(data)
-        assert entries["mypackage.Clip"] == "api/transforms/#mypackage.transforms.Clip"
+        assert entries["tracerax.Clip"] == "api/transforms/#tracerax.transforms.Clip"
         assert len(entries) == 2
 
     def test_expands_dollar_abbreviation(self) -> None:
-        data = make_inventory(["mypackage.stats.Summary py:class 1 api/stats/#$ -"])
+        data = make_inventory(["tracerax.stats.Summary py:class 1 api/stats/#$ -"])
         entries = build_docs.parse_inventory(data)
-        assert entries["mypackage.stats.Summary"] == (
-            "api/stats/#mypackage.stats.Summary"
+        assert entries["tracerax.stats.Summary"] == (
+            "api/stats/#tracerax.stats.Summary"
         )
 
     def test_rejects_unknown_version(self) -> None:
@@ -70,27 +70,25 @@ class TestParseInventory:
         if not real.is_file():
             pytest.skip("run `uv run poe docs-api` first")
         entries = build_docs.parse_inventory(real.read_bytes())
-        assert "mypackage.summarize" in entries
+        assert "tracerax.TraceraxError" in entries
         assert all("$" not in uri for uri in entries.values())
 
 
 class TestAnchorCaseMap:
     def test_maps_lowercased_to_true_spelling(self) -> None:
-        entries = {"a": "api/stats/#mypackage.stats.RunningStats"}
+        entries = {"a": "api/stats/#tracerax.stats.RunningStats"}
         mapping = build_docs.anchor_case_map(entries)
-        assert mapping["mypackage.stats.runningstats"] == (
-            "mypackage.stats.RunningStats"
-        )
+        assert mapping["tracerax.stats.runningstats"] == ("tracerax.stats.RunningStats")
 
     def test_omits_already_lowercase_anchors(self) -> None:
-        entries = {"a": "api/stats/#mypackage.stats.summarize"}
+        entries = {"a": "api/stats/#tracerax.stats.summarize"}
         assert build_docs.anchor_case_map(entries) == {}
 
     def test_omits_ambiguous_anchors(self) -> None:
         """Two symbols colliding under lowercasing must not be guessed at."""
         entries = {
-            "a": "api/x/#mypackage.Foo",
-            "b": "api/y/#mypackage.FOO",
+            "a": "api/x/#tracerax.Foo",
+            "b": "api/y/#tracerax.FOO",
         }
         assert build_docs.anchor_case_map(entries) == {}
 
@@ -100,11 +98,11 @@ class TestAnchorCaseMap:
 
 class TestRestoreAnchorCase:
     def test_repairs_a_lowercased_anchor(self) -> None:
-        mapping = {"mypackage.stats.runningstats": "mypackage.stats.RunningStats"}
-        html = '<a href="/reference/api/stats/#mypackage.stats.runningstats">x</a>'
+        mapping = {"tracerax.stats.runningstats": "tracerax.stats.RunningStats"}
+        html = '<a href="/reference/api/stats/#tracerax.stats.runningstats">x</a>'
         fixed, count = build_docs.restore_anchor_case(html, mapping)
         assert count == 1
-        assert "#mypackage.stats.RunningStats" in fixed
+        assert "#tracerax.stats.RunningStats" in fixed
 
     def test_leaves_unknown_anchors_alone(self) -> None:
         html = '<a href="/guide/#some-heading">x</a>'
@@ -116,11 +114,11 @@ class TestRestoreAnchorCase:
         assert build_docs.restore_anchor_case(html, {"a": "A"}) == (html, 0)
 
     def test_repairs_every_occurrence(self) -> None:
-        mapping = {"mypackage.clip": "mypackage.Clip"}
-        html = '<a href="a#mypackage.clip">1</a><a href="b#mypackage.clip">2</a>'
+        mapping = {"tracerax.clip": "tracerax.Clip"}
+        html = '<a href="a#tracerax.clip">1</a><a href="b#tracerax.clip">2</a>'
         fixed, count = build_docs.restore_anchor_case(html, mapping)
         assert count == 2
-        assert "mypackage.clip" not in fixed
+        assert "tracerax.clip" not in fixed
 
 
 class TestRewriteApiOrigin:
@@ -142,9 +140,9 @@ class TestRewriteApiOrigin:
     def test_honours_a_base_url_prefix(self) -> None:
         html = '<a href="http://127.0.0.1:8910/api/">x</a>'
         fixed, _ = build_docs.rewrite_api_origin(
-            html, "http://127.0.0.1:8910/", "/pypackage_template/reference/"
+            html, "http://127.0.0.1:8910/", "/tracerax/reference/"
         )
-        assert fixed == '<a href="/pypackage_template/reference/api/">x</a>'
+        assert fixed == '<a href="/tracerax/reference/api/">x</a>'
 
 
 class TestVerifyLinks:
@@ -159,8 +157,8 @@ class TestVerifyLinks:
         self.build_site(
             tmp_path,
             {
-                "index.html": '<a href="reference/stats/#mypackage.Clip">api</a>',
-                "reference/stats/index.html": '<h3 id="mypackage.Clip">Clip</h3>',
+                "index.html": '<a href="reference/stats/#tracerax.Clip">api</a>',
+                "reference/stats/index.html": '<h3 id="tracerax.Clip">Clip</h3>',
             },
         )
         assert build_docs.verify_links(tmp_path) == []
@@ -176,8 +174,8 @@ class TestVerifyLinks:
         self.build_site(
             tmp_path,
             {
-                "index.html": '<a href="reference/stats/#mypackage.clip">api</a>',
-                "reference/stats/index.html": '<h3 id="mypackage.Clip">Clip</h3>',
+                "index.html": '<a href="reference/stats/#tracerax.clip">api</a>',
+                "reference/stats/index.html": '<h3 id="tracerax.Clip">Clip</h3>',
             },
         )
         problems = build_docs.verify_links(tmp_path)
@@ -244,20 +242,20 @@ class TestDollarAbbreviationRepair:
     """
 
     def test_repairs_a_dollar_expanded_anchor(self) -> None:
-        data = make_inventory(["mypackage.stats.Summary py:class 1 stats/#$ -"])
+        data = make_inventory(["tracerax.stats.Summary py:class 1 stats/#$ -"])
         mapping = build_docs.anchor_case_map(build_docs.parse_inventory(data))
-        html = '<a href="/reference/stats/#mypackage.stats.summary">Summary</a>'
+        html = '<a href="/reference/stats/#tracerax.stats.summary">Summary</a>'
         fixed, count = build_docs.restore_anchor_case(html, mapping)
         assert count == 1
-        assert "#mypackage.stats.Summary" in fixed
+        assert "#tracerax.stats.Summary" in fixed
 
     def test_explicit_anchors_need_no_repair(self) -> None:
         """The form mkdocstrings uses for top-level re-exports."""
         data = make_inventory(
-            ["mypackage.Summary py:class 2 stats/#mypackage.stats.Summary -"]
+            ["tracerax.Summary py:class 2 stats/#tracerax.stats.Summary -"]
         )
         mapping = build_docs.anchor_case_map(build_docs.parse_inventory(data))
-        html = '<a href="/reference/stats/#mypackage.stats.Summary">Summary</a>'
+        html = '<a href="/reference/stats/#tracerax.stats.Summary">Summary</a>'
         assert build_docs.restore_anchor_case(html, mapping) == (html, 0)
 
 
@@ -273,13 +271,8 @@ class TestNavBaseUrlProblems:
     """
 
     def test_flags_a_root_relative_nav_url(self) -> None:
-        html = (
-            '<script>{"nav":[{"title":"API",'
-            '"url":"/pypackage_template/reference/"}]}</script>'
-        )
-        assert build_docs.nav_base_url_problems(html) == [
-            "/pypackage_template/reference/"
-        ]
+        html = '<script>{"nav":[{"title":"API","url":"/tracerax/reference/"}]}</script>'
+        assert build_docs.nav_base_url_problems(html) == ["/tracerax/reference/"]
 
     def test_accepts_an_absolute_nav_url(self) -> None:
         html = (

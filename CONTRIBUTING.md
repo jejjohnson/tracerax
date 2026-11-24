@@ -2,13 +2,13 @@
 
 See the full contributor guide at [docs/contributing.md](docs/contributing.md) for:
 
-- Label taxonomy (`type:*`, `area:*`, `layer:*`, `wave:*`, `priority:*`)
+- Label taxonomy (`type:*`, `area:*`, `wave:*`, `priority:*`)
 - Two-layer epic model (**Wave → Theme → Issue**)
 - Issue format conventions (`.github/ISSUE_TEMPLATE/`)
 - Relationships syntax (`Parent:`, `Blocked by:`, `Blocks:`, `Related:`)
 - Pre-commit checklist and quality gates
 
-Bootstrap the standard label set for a fresh clone of this template:
+Bootstrap the standard label set for a fresh clone:
 
 ```bash
 uv run poe gh-labels

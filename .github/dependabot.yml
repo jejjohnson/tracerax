@@ -4,6 +4,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # PR titles follow Conventional Commits; dependabot adds the colon
+    commit-message:
+      prefix: "chore(deps)"
     labels:
       - "dependencies"
       - "github-actions"
@@ -12,6 +15,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # PR titles follow Conventional Commits; dependabot adds the colon
+    commit-message:
+      prefix: "chore(deps)"
     labels:
       - "dependencies"
       - "python"

@@ -3,8 +3,8 @@ name: Type Check
 on:
   push:
     branches: [main]
+  # every pull request, whatever its base, so stacked PRs are tested too
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -20,4 +20,4 @@ jobs:
       - name: Install typecheck dependencies
         run: uv sync --group typecheck
       - name: Run ty check
-        run: uv run --group typecheck ty check src/mypackage scripts
+        run: uv run --group typecheck ty check src/tracerax scripts
