@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.6](https://github.com/jejjohnson/tracerax/compare/v0.0.5...v0.0.6) (2026-11-25)
+
+
+### Bug Fixes
+
+* **advect:** the walls of Walls are finite ([#57](https://github.com/jejjohnson/tracerax/issues/57)) ([2027e23](https://github.com/jejjohnson/tracerax/commit/2027e23a7d15a50ed36ad4f9584f1421d8503622))
+* **velocity:** cgrid_grids takes axes from outside a jit ([#56](https://github.com/jejjohnson/tracerax/issues/56)) ([532b012](https://github.com/jejjohnson/tracerax/commit/532b012d53722e609bcf59cdc50029d8231bc871))
+
 ## [0.0.5](https://github.com/jejjohnson/tracerax/compare/v0.0.4...v0.0.5) (2026-11-25)
 
 

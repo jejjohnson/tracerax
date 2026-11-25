@@ -2652,7 +2652,7 @@ wheels = [
 
 [[package]]
 name = "tracerax"
-version = "0.0.5"
+version = "0.0.6"
 source = { editable = "." }
 dependencies = [
     { name = "diffrax" },
