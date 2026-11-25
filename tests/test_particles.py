@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
 from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
-from _oracles import plumax_values
+from _reference import reference_values
 from _sampling import assert_mean, assert_uniform
 from hypothesis import given, settings, strategies as st
 
@@ -286,9 +286,9 @@ class TestReleaseTimes:
 
 
 class TestWithTurbulentVelocity:
-    def test_it_is_plumaxs_initial_draw(self) -> None:
-        """plumax splits the seed's key, and draws σ(z₀) times a standard normal."""
-        stored = plumax_values("residence")
+    def test_it_is_the_draw_in_numpy(self) -> None:
+        """σ(z₀) times a standard normal."""
+        stored = reference_values("residence")
         size = int(stored["size"])
         _, key = jax.random.split(jax.random.PRNGKey(int(stored["seed"])))
         state = at_point(stored["source"], size)

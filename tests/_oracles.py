@@ -1,4 +1,4 @@
-"""Closed forms of particle motion, and the stored plumax values.
+"""Closed forms of particle motion.
 
 Each form is a small object or function in SI units. The velocities are
 callables ``velocity(t, position)``, as tracerax's are, so a test passes one to
@@ -8,7 +8,6 @@ the code under test and compares with its ``exact``.
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 from typing import Any
 
 import jax
@@ -17,39 +16,13 @@ import numpy as np
 
 
 __all__ = [
-    "PLUMAX_COMMIT",
-    "PLUMAX_FAMILIES",
     "CosineDiffusivity",
     "DoubleGyre",
     "SolidBodyRotation",
     "SphereRotation",
-    "plumax_values",
     "taylor_variance",
     "uniform_wind_position",
 ]
-
-
-# --- stored plumax values ---------------------------------------------------
-
-#: The plumax commit whose values are stored in ``tests/data``.
-PLUMAX_COMMIT = "96449d2"
-
-#: The families that have a file there.
-PLUMAX_FAMILIES = (
-    "binning",
-    "footprint",
-    "langevin",
-    "residence",
-    "trajectory",
-    "wind",
-)
-
-
-def plumax_values(family: str) -> dict[str, np.ndarray]:
-    """The values stored from plumax, by name (see ``data/write_plumax.py``)."""
-    path = Path(__file__).parent / "data" / f"plumax_{family}_{PLUMAX_COMMIT}.npz"
-    with np.load(path) as stored:
-        return dict(stored)
 
 
 # --- deterministic motion ---------------------------------------------------

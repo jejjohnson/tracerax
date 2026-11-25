@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
-from _oracles import plumax_values
+from _reference import reference_values
 from functax.geometry import Axis, Points, RectilinearGrid
 from functax.interp import Cubic, Linear, Policies
 
@@ -28,13 +28,13 @@ from tracerax.velocity import (
 
 KEY = jax.random.key(0)
 
-# plumax computed the values in XLA; another order of the same sums rounds
+# NumPy computed the values; another order of the same sums rounds
 # differently, and the fields are of order 1
 RTOL, ATOL = 1e-12, 1e-12
 
 
 def _stored_wind() -> tuple[GriddedVelocity, dict[str, np.ndarray]]:
-    stored = plumax_values("wind")
+    stored = reference_values("wind")
     grids = cgrid_grids(stored["times"], stored["x"], stored["y"], stored["z"])
     fields = (stored["u"], stored["v"], stored["w"])
     return GriddedVelocity.fit(grids, fields), stored
@@ -105,7 +105,7 @@ class TestUniformInSpace:
 
 
 class TestGriddedVelocity:
-    def test_it_is_plumaxs_gridded_wind(self) -> None:
+    def test_it_is_scipys_interpolation(self) -> None:
         velocity, stored = _stored_wind()
         position = jnp.asarray(stored["position"])
         for time, expected in zip(stored["t"], stored["velocity"], strict=True):
@@ -185,7 +185,7 @@ class TestGriddedVelocity:
         assert_matches_oracle(jacobian, np.zeros((1, 2, 1, 2)), rtol=0.0)
 
     def test_gradient_in_the_samples_is_the_plans_adjoint(self) -> None:
-        stored = plumax_values("wind")
+        stored = reference_values("wind")
         grids = cgrid_grids(stored["times"], stored["x"], stored["y"], stored["z"])
         fields = tuple(jnp.asarray(stored[name]) for name in "uvw")
         position = jnp.asarray(stored["position"])

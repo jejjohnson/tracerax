@@ -23,7 +23,7 @@ The diff (`git diff <base>...HEAD`, default base `main`) or the files you are gi
 9. **Dtype and precision.** An array constant without `dtype=`; a silent cast; a position far from its local origin in float32. Run the function on float32 input and check the output dtype.
 10. **Gradients and tracing.** A `where` whose unused branch is `nan` or `inf`, or a field read at a masked particle's own position (`stand_in`); a `maximum` or a `clip` that ties where the function is smooth, which splits the gradient; `sqrt` at 0; `%` or `floor` where a gradient is wanted; a Python `if` on a traced value; `jax.jit` inside the library; `solver.step` in a scan, which supports one AD mode only.
 11. **Docs that lie.** A docstring `Examples:` output the code does not print, `Raises:` listing an error the code never raises, an equation above a line that disagrees with the code, a quoted reference value with no source.
-12. **Tests.** A tolerance with no comment saying where it comes from; a statistical test that is not bounded by its own sampling distribution; a key that was chosen to make the test pass; a stored plumax value for a case where one reflection was not enough ([plumax#392](https://github.com/jejjohnson/plumax/issues/392)).
+12. **Tests.** A tolerance with no comment saying where it comes from; a statistical test that is not bounded by its own sampling distribution; a key that was chosen to make the test pass; a reference run that calls tracerax, or never meets a wall.
 
 ## Verify before reporting
 

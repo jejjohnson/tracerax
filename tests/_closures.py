@@ -1,10 +1,8 @@
 """Two turbulence closures for the tests.
 
 A closure is any object whose ``at(height)`` gives (σ, τ_L) with a trailing axis
-of 3 for (u, v, w), which is what plumax's ``TurbulenceModel`` protocol asks for
-and what tracerax's will (tracerax#19). So these run in both packages, and no
-plumax closure is copied here. ``tests/data/write_plumax.py`` imports this file
-in plumax's environment: it may need JAX and Equinox only.
+of 3 for (u, v, w), which is what tracerax's ``TurbulenceModel`` asks for. The
+closures of a real boundary layer are plumax's, and none is copied here.
 """
 
 from __future__ import annotations
