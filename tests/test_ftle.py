@@ -6,6 +6,7 @@ import inspect
 from typing import Any
 
 import diffrax as dfx
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -337,7 +338,7 @@ def test_integer_seeds_and_seeds_of_another_shape() -> None:
 def test_traced_latitudes_beyond_a_pole_are_refused() -> None:
     flow = SphereRotation(1e-5, tilt=0.4)
 
-    @jax.jit
+    @eqx.filter_jit
     def exponents(seeds: jax.Array) -> jax.Array:
         return ftle(seeds, flow, t0=0.0, duration=60.0, n_steps=2, earth=SPHERE)
 
