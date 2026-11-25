@@ -38,7 +38,7 @@ The modules marked *available* are built. The order is:
 | `particles` | the particle state, the step protocol, seeding at points, along lines and over boxes | *available* |
 | `velocity` | velocities at particles: uniform, gridded through functax, weighted sums | *available* |
 | `advect` | deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | *available* |
-| `bin` | cells from edges, deposits that conserve mass at walls, residence, concentrations | [Wave 2](https://github.com/jejjohnson/tracerax/issues/10) |
+| `bin` | cells from edges, deposits that conserve mass at walls (*available*); residence, concentrations | [Wave 2](https://github.com/jejjohnson/tracerax/issues/10) |
 | `footprint` | surface footprints from backward runs | [Wave 2](https://github.com/jejjohnson/tracerax/issues/10) |
 | `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill; the sphere and inertial particles join `advect` | [Wave 3](https://github.com/jejjohnson/tracerax/issues/11) |
 

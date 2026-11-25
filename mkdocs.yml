@@ -75,6 +75,7 @@ nav:
   - Particles: particles.md
   - Velocities: velocity.md
   - Advection: advect.md
+  - Cells and deposits: bin.md
   - Type aliases: typing.md
   - Exceptions: exceptions.md
 

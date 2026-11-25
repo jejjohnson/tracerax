@@ -519,10 +519,11 @@ class TestTheStoredPlumaxValues:
         noise = jax.vmap(lambda key: jax.random.normal(key, (200, 3)))(keys)
         assert_matches_oracle(noise, stored["noise"], rtol=RTOL)
 
-    def test_binning(self) -> None:
+    @pytest.mark.parametrize("prefix", ["", "stretched_"])
+    def test_binning(self, prefix: str) -> None:
         stored = plumax_values("binning")
         # right-open cells, the last one included: not histogramdd, which closes it
-        edges = [stored[f"{axis}_edges"] for axis in "xyz"]
+        edges = [stored[f"{prefix}{axis}_edges"] for axis in "xyz"]
         counts = np.zeros([len(axis) - 1 for axis in edges])
         for point in stored["position"]:
             index = [
@@ -531,7 +532,7 @@ class TestTheStoredPlumaxValues:
             ]
             if all(0 <= i < n for i, n in zip(index, counts.shape, strict=True)):
                 counts[tuple(index)] += 1.0
-        assert_matches_oracle(stored["counts"], counts, rtol=0.0)
+        assert_matches_oracle(stored[f"{prefix}counts"], counts, rtol=0.0)
         # some particles are outside, some inside, and one is on the last edge
         assert 0 < counts.sum() < len(stored["position"]) - 1
 
