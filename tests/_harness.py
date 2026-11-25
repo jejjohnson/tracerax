@@ -53,7 +53,7 @@ def assert_matches_oracle(
 
     Args:
         actual: The values under test.
-        expected: The reference values (a closed form, stored plumax values), the
+        expected: The reference values (a closed form, a run in NumPy), the
             same shape.
         rtol: The relative tolerance.
         atol: The absolute tolerance, for references that cross zero.

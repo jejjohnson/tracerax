@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
 from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
-from _oracles import plumax_values
+from _reference import CLOSURES, reference_values
 from integrix.adjoint import Checkpointed, Truncated
 
 from tracerax import ValidationError
@@ -23,7 +23,6 @@ from tracerax.velocity import uniform, uniform_in_space
 
 
 KEY = jax.random.key(0)
-CLOSURES = {"homogeneous": Homogeneous(), "linear": LinearSigma()}
 WIND = jnp.array([3.0, -1.0, 0.0])
 CELLS = Cells(
     (
@@ -52,13 +51,13 @@ def _surface(receptor: Any = RECEPTOR, **changes: Any) -> Footprint:
     return surface(receptor, **options)
 
 
-class TestAgainstPlumax:
-    """G2-plumax, for the footprint."""
+class TestAgainstNumPy:
+    """G2-reference, for the footprint."""
 
     @pytest.mark.parametrize("prefix", ["", "steady_"])
     @pytest.mark.parametrize("name", CLOSURES)
-    def test_compute_footprint(self, name: str, prefix: str) -> None:
-        stored = plumax_values("footprint")
+    def test_a_run(self, name: str, prefix: str) -> None:
+        stored = reference_values("footprint")
         constant, slope = jnp.asarray(stored["wind"])
         varying = uniform_in_space(lambda t: constant + t * slope)
         domains = [stored[f"domain_{axis}"] for axis in "xy"]
@@ -86,7 +85,7 @@ class TestAgainstPlumax:
         )
 
     def test_the_two_winds_differ(self) -> None:
-        stored = plumax_values("footprint")
+        stored = reference_values("footprint")
         for name in CLOSURES:
             change = stored[f"{name}_footprint"] - stored[f"steady_{name}_footprint"]
             assert np.abs(change).max() > 0.1 * stored[f"{name}_footprint"].max()

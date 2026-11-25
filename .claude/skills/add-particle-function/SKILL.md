@@ -40,7 +40,7 @@ Private code goes in `src/tracerax/_src/<module>/<topic>.py`; the public module 
 
 In `tests/test_<module>.py`, with the helpers of `tests/`:
 
-- **Oracle.** A closed form (`tests/_oracles.py`) or a stored plumax value (`plumax_values`), in float64, with the tolerance and its source in a comment (`assert_matches_oracle`; `assert_adjoint` for a linear map). A sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key.
+- **Oracle.** A closed form (`tests/_oracles.py`) or a run written out in NumPy (`tests/_reference.py`), in float64, with the tolerance and its source in a comment (`assert_matches_oracle`; `assert_adjoint` for a linear map). A sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key.
 - **Transforms.** Eager, `jit` and `vmap` over a batch of one agree (`assert_traces`).
 - **Gradients.** Autodiff against central differences at a fixed key, where the function is smooth (`assert_grad_matches_fd`).
 - **Masks.** An inactive or unreleased particle changes nothing and stays finite, in value and in gradient.

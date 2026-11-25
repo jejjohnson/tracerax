@@ -3,8 +3,6 @@ reference is what its name says."""
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import Any
 
 import diffrax as dfx
@@ -13,7 +11,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _closures import Homogeneous, LinearSigma
 from _harness import (
     assert_adjoint,
     assert_grad_matches_fd,
@@ -21,14 +18,18 @@ from _harness import (
     assert_traces,
 )
 from _oracles import (
-    PLUMAX_COMMIT,
-    PLUMAX_FAMILIES,
     CosineDiffusivity,
     DoubleGyre,
     SolidBodyRotation,
-    plumax_values,
     taylor_variance,
     uniform_wind_position,
+)
+from _reference import (
+    CLOSURES,
+    FAMILIES,
+    closure_statistics,
+    fold,
+    reference_values,
 )
 from _sampling import (
     assert_mean,
@@ -39,11 +40,7 @@ from _sampling import (
 )
 from hypothesis import given, strategies as st
 from scipy import stats
-from scipy.interpolate import RegularGridInterpolator
 
-
-DATA = Path(__file__).parent / "data"
-CLOSURES = {"homogeneous": Homogeneous(), "linear": LinearSigma()}
 
 SIGMA, TIMESCALE = 0.5, 60.0
 
@@ -362,273 +359,26 @@ class TestClosedForms:
             assert_uniform(final, 0.0, 1.0)
 
 
-# --- the stored plumax values, against independent NumPy evaluations ---------
+# --- the runs written out in NumPy -------------------------------------------
 
 
-def _sigma(name: str, height: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """σ(z), shape (n, 3), and ∂σ_w²/∂z, shape (n,), written out."""
-    if name == "homogeneous":
-        return np.full((*height.shape, 3), 0.5), np.zeros_like(height)
-    sigma_vertical = 0.2 + 0.001 * height
-    horizontal = np.full_like(height, 0.4)
-    sigma = np.stack([horizontal, horizontal, sigma_vertical], axis=-1)
-    return sigma, 2.0 * 0.001 * sigma_vertical
-
-
-def _fold(height: np.ndarray, lid: float) -> tuple[np.ndarray, np.ndarray]:
-    """The triangle-wave fold onto [0, h], and the sign it gives the velocity."""
-    wrapped = np.mod(height, 2.0 * lid)
-    inside = np.where(wrapped > lid, 2.0 * lid - wrapped, wrapped)
-    crossings = np.floor(height / lid).astype(int)
-    return inside, np.where(crossings % 2 == 0, 1.0, -1.0)
-
-
-def _langevin(
-    name: str,
-    position: np.ndarray,
-    velocity: np.ndarray,
-    wind: np.ndarray,
-    noise: np.ndarray,
-    step_size: float,
-    lid: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """One well-mixed Langevin step with folded walls, in NumPy."""
-    sigma, variance_slope = _sigma(name, position[:, 2])
-    decay = np.exp(-step_size / 60.0)
-    velocity = decay * velocity + sigma * np.sqrt(1.0 - decay**2) * noise
-    vertical = velocity[:, 2]
-    # ½ (1 + w²/σ_w²) ∂σ_w²/∂z Δt
-    drift = 0.5 * (1.0 + vertical**2 / sigma[:, 2] ** 2) * variance_slope * step_size
-    velocity[:, 2] += drift
-    position = position + (wind + velocity) * step_size
-    position[:, 2], sign = _fold(position[:, 2], lid)
-    velocity[:, 2] *= sign
-    return position, velocity
-
-
-def _steps(duration: float, step_size: float) -> np.ndarray:
-    """Step lengths that sum to the duration, the last one shorter."""
-    num_steps = int(np.ceil(duration / step_size))
-    durations = np.full(num_steps, step_size)
-    durations[-1] = duration - step_size * (num_steps - 1)
-    return durations
-
-
-def _wind_at(stored: dict[str, np.ndarray], time: float) -> np.ndarray:
-    return stored["wind"][0] + time * stored["wind"][1]
-
-
-def _edges(domain: np.ndarray) -> np.ndarray:
-    start, stop, cells = domain
-    return np.linspace(start, stop, int(cells) + 1)
-
-
-def _released(
-    name: str, source: np.ndarray, seed: int, size: int
-) -> tuple[np.ndarray, np.ndarray, jax.Array]:
-    """plumax's release: positions, drawn velocities and the key of the steps."""
-    key_steps, key_velocity = jax.random.split(jax.random.PRNGKey(seed))
-    sigma, _ = _sigma(name, source[2:])
-    velocity = np.asarray(jax.random.normal(key_velocity, (size, 3))) * sigma
-    return np.broadcast_to(source, (size, 3)).copy(), velocity, key_steps
-
-
-# plumax computed the values in XLA on one machine; NumPy rounds differently
-RTOL, ATOL = 1e-12, 1e-11
-
-
-class TestTheStoredPlumaxValues:
-    def test_every_family_has_its_file_and_nothing_else(self) -> None:
-        found = sorted(path.name for path in DATA.glob("*.npz"))
-        assert found == [
-            f"plumax_{family}_{PLUMAX_COMMIT}.npz" for family in PLUMAX_FAMILIES
-        ]
-
-    def test_the_files_total_less_than_500_kb(self) -> None:
-        assert sum(path.stat().st_size for path in DATA.glob("*.npz")) < 500_000
-
-    @pytest.mark.parametrize("family", PLUMAX_FAMILIES)
-    def test_every_array_is_float64_and_finite(self, family: str) -> None:
-        for name, values in plumax_values(family).items():
+class TestTheReferenceRuns:
+    @pytest.mark.parametrize("family", FAMILIES)
+    def test_every_array_is_double_and_finite(self, family: str) -> None:
+        for name, values in reference_values(family).items():
             if name == "key":
                 continue
             assert values.dtype in (np.float64, np.int64), name
             assert np.isfinite(values).all(), name
 
-    def test_this_jax_draws_the_stored_noise(self) -> None:
-        stored = plumax_values("langevin")
-        noise = jax.random.normal(jnp.asarray(stored["key"]), stored["noise"].shape)
-        assert_matches_oracle(noise, stored["noise"], rtol=RTOL)
+    def test_a_caller_gets_its_own_copy(self) -> None:
+        reference_values("wind")["u"][:] = np.nan
+        assert np.isfinite(reference_values("wind")["u"]).all()
 
     @pytest.mark.parametrize("name", CLOSURES)
-    def test_langevin_step(self, name: str) -> None:
-        stored = plumax_values("langevin")
-        position, velocity = _langevin(
-            name,
-            stored[f"{name}_start_position"],
-            stored[f"{name}_start_velocity"],
-            stored["wind"],
-            stored["noise"],
-            float(stored["step_size"]),
-            float(stored["lid"]),
-        )
-        assert_matches_oracle(
-            stored[f"{name}_position"], position, rtol=RTOL, atol=ATOL
-        )
-        assert_matches_oracle(
-            stored[f"{name}_velocity"], velocity, rtol=RTOL, atol=ATOL
-        )
-
-    @pytest.mark.parametrize("name", CLOSURES)
-    def test_langevin_step_meets_both_walls(self, name: str) -> None:
-        """A case that never reflects would not test a wall."""
-        stored = plumax_values("langevin")
-        start = stored[f"{name}_start_position"][:, 2]
-        unfolded_up = stored[f"{name}_velocity"][:, 2] + stored["wind"][2]
-        moved = stored[f"{name}_position"][:, 2] - start
-        reflected = np.abs(moved - unfolded_up * stored["step_size"]) > 1e-9
-        assert np.sum(reflected & (start < 25.0)) >= 1
-        assert np.sum(reflected & (start > 25.0)) >= 1
-
-    @pytest.mark.parametrize("name", CLOSURES)
-    def test_trajectory(self, name: str) -> None:
-        stored = plumax_values("trajectory")
-        expected = stored[f"{name}_trajectory"]
-        position, velocity = expected[0], stored[f"{name}_start_velocity"]
-        durations = _steps(float(stored["duration"]), float(stored["step_size"]))
-        assert durations[-1] < durations[0]
-        for step, duration in enumerate(durations):
-            time = stored["t0"] + step * stored["step_size"]
-            position, velocity = _langevin(
-                name,
-                position,
-                velocity,
-                _wind_at(stored, time),
-                stored["noise"][step],
-                duration,
-                float(stored["lid"]),
-            )
-            assert_matches_oracle(expected[step + 1], position, rtol=RTOL, atol=ATOL)
-        assert_matches_oracle(
-            stored[f"{name}_velocity"], velocity, rtol=RTOL, atol=ATOL
-        )
-
-    def test_the_trajectory_noise_is_its_keys(self) -> None:
-        stored = plumax_values("trajectory")
-        keys = jax.random.split(jnp.asarray(stored["key"]), stored["noise"].shape[0])
-        noise = jax.vmap(lambda key: jax.random.normal(key, (200, 3)))(keys)
-        assert_matches_oracle(noise, stored["noise"], rtol=RTOL)
-
-    @pytest.mark.parametrize("prefix", ["", "stretched_"])
-    def test_binning(self, prefix: str) -> None:
-        stored = plumax_values("binning")
-        # right-open cells, the last one included: not histogramdd, which closes it
-        edges = [stored[f"{prefix}{axis}_edges"] for axis in "xyz"]
-        counts = np.zeros([len(axis) - 1 for axis in edges])
-        for point in stored["position"]:
-            index = [
-                int(np.searchsorted(axis, value, side="right")) - 1
-                for axis, value in zip(edges, point, strict=True)
-            ]
-            if all(0 <= i < n for i, n in zip(index, counts.shape, strict=True)):
-                counts[tuple(index)] += 1.0
-        assert_matches_oracle(stored[f"{prefix}counts"], counts, rtol=0.0)
-        # some particles are outside, some inside, and one is on the last edge
-        assert 0 < counts.sum() < len(stored["position"]) - 1
-
-    @pytest.mark.parametrize("name", CLOSURES)
-    def test_residence(self, name: str) -> None:
-        stored = plumax_values("residence")
-        size = int(stored["size"])
-        position, velocity, key = _released(
-            name, stored["source"], int(stored["seed"]), size
-        )
-        edges = [_edges(stored[f"domain_{axis}"]) for axis in "xyz"]
-        durations = _steps(float(stored["duration"]), float(stored["step_size"]))
-        keys = jax.random.split(key, durations.size)
-        residence = np.zeros([len(axis) - 1 for axis in edges])
-        for step, duration in enumerate(durations):
-            noise = np.asarray(jax.random.normal(keys[step], (size, 3)))
-            wind = _wind_at(stored, step * float(stored["step_size"]))
-            position, velocity = _langevin(
-                name, position, velocity, wind, noise, duration, float(stored["lid"])
-            )
-            counts, _ = np.histogramdd(position, bins=edges)
-            residence += counts * duration
-        volume = np.prod([axis[1] - axis[0] for axis in edges])
-        expected = stored["emission_rate"] * residence / (size * volume)
-        assert expected.sum() > 0.0
-        assert_matches_oracle(stored[f"{name}_concentration"], expected, rtol=RTOL)
-
-    @pytest.mark.parametrize("name", CLOSURES)
-    @pytest.mark.parametrize("prefix", ["", "steady_"])
-    def test_footprint(self, prefix: str, name: str) -> None:
-        stored = plumax_values("footprint")
-        size, lid = int(stored["size"]), float(stored["pbl_height"])
-        position, velocity, key = _released(
-            name, stored["receptor"], int(stored["seed"]), size
-        )
-        edges = [_edges(stored[f"domain_{axis}"]) for axis in "xy"]
-        # backward: the short step comes first, on the receptor's clock
-        durations = _steps(float(stored["t_back"]), float(stored["dt"]))[::-1]
-        starts = stored["receptor_time"] - np.cumsum(durations)
-        keys = jax.random.split(key, durations.size)
-        depth = float(stored["pbl_fraction"]) * lid
-        residence = np.zeros([len(axis) - 1 for axis in edges])
-        for step, duration in enumerate(durations):
-            noise = np.asarray(jax.random.normal(keys[step], (size, 3)))
-            wind = -_wind_at(stored, 0.0 if prefix else starts[step])
-            position, velocity = _langevin(
-                name, position, velocity, wind, noise, duration, lid
-            )
-            seen = position[position[:, 2] < depth]
-            counts, *_ = np.histogram2d(seen[:, 0], seen[:, 1], bins=edges)
-            residence += counts * duration
-        expected = residence / (size * float(stored["air_density"]) * depth)
-        assert expected.sum() > 0.0
-        assert_matches_oracle(stored[f"{prefix}{name}_footprint"], expected, rtol=RTOL)
-
-    def test_wind(self) -> None:
-        """u half a cell east and v half a cell north, held outside the grid."""
-        stored = plumax_values("wind")
-        x, y, z, times = (stored[name] for name in ("x", "y", "z", "times"))
-        half_x, half_y = 0.5 * (x[1] - x[0]), 0.5 * (y[1] - y[0])
-        axes = {
-            "u": (times, z, y, x + half_x),
-            "v": (times, z, y + half_y, x),
-            "w": (times, z, y, x),
-        }
-        position = stored["position"]
-        for step, time in enumerate(stored["t"]):
-            targets = np.column_stack([np.full(len(position), time), position[:, ::-1]])
-            for column, (name, grid) in enumerate(axes.items()):
-                held = np.clip(
-                    targets,
-                    [axis[0] for axis in grid],
-                    [axis[-1] for axis in grid],
-                )
-                expected = RegularGridInterpolator(grid, stored[name])(held)
-                assert_matches_oracle(
-                    stored["velocity"][step, :, column], expected, rtol=RTOL, atol=ATOL
-                )
-        assert (np.abs(position[:, 0]) > 25.0).any()
-
-
-class TestTheWriter:
-    def test_it_holds_the_same_commit_and_families(self) -> None:
-        spec = importlib.util.spec_from_file_location(
-            "writer", DATA / "write_plumax.py"
-        )
-        assert spec is not None and spec.loader is not None
-        writer = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(writer)
-        assert writer.COMMIT == PLUMAX_COMMIT
-        assert tuple(f.__name__ for f in writer.FAMILIES) == PLUMAX_FAMILIES
-
-    @pytest.mark.parametrize("name", CLOSURES)
-    def test_the_closures_are_the_formulas_here(self, name: str) -> None:
+    def test_the_closures_are_the_formulas_there(self, name: str) -> None:
         height = np.linspace(0.0, 50.0, 7)
-        sigma, variance_slope = _sigma(name, height)
+        sigma, variance_slope = closure_statistics(name, height)
         closure = CLOSURES[name]
         got_sigma, got_timescale = closure.at(jnp.asarray(height))
         assert_matches_oracle(got_sigma, sigma, rtol=1e-14)
@@ -637,3 +387,48 @@ class TestTheWriter:
             jnp.asarray(height)
         )
         assert_matches_oracle(slope, variance_slope, rtol=1e-14)
+
+    def test_the_fold_reflects_one_wall_at_a_time(self) -> None:
+        height = np.linspace(-180.0, 230.0, 83)
+        folded, sign = height.copy(), np.ones_like(height)
+        # five reflections bring 4.6 layers inside
+        for _ in range(5):
+            below, above = folded < 0.0, folded > 50.0
+            folded = np.where(below, -folded, np.where(above, 100.0 - folded, folded))
+            sign = np.where(below | above, -sign, sign)
+        got, got_sign = fold(height, 50.0)
+        assert_matches_oracle(got, folded, rtol=0.0, atol=1e-12)
+        # at a wall, the sign is a convention
+        between = (folded > 1e-9) & (folded < 50.0 - 1e-9)
+        assert np.array_equal(got_sign[between], sign[between])
+
+    @pytest.mark.parametrize("name", CLOSURES)
+    def test_the_step_meets_both_walls(self, name: str) -> None:
+        """A case that never reflects would not test a wall."""
+        run = reference_values("langevin")
+        start = run[f"{name}_start_position"][:, 2]
+        unfolded_up = run[f"{name}_velocity"][:, 2] + run["wind"][2]
+        moved = run[f"{name}_position"][:, 2] - start
+        reflected = np.abs(moved - unfolded_up * run["step_size"]) > 1e-9
+        assert np.sum(reflected & (start < 25.0)) >= 1
+        assert np.sum(reflected & (start > 25.0)) >= 1
+
+    @pytest.mark.parametrize("prefix", ["", "stretched_"])
+    def test_the_counts_are_scipys_away_from_the_edges(self, prefix: str) -> None:
+        run = reference_values("binning")
+        edges = [run[f"{prefix}{axis}_edges"] for axis in "xyz"]
+        counts, _ = np.histogramdd(run["position"], bins=edges)
+        # histogramdd closes the last cell, and the second particle is on its edge
+        on_edge, _ = np.histogramdd(run["position"][1:2], bins=edges)
+        assert on_edge.sum() == 1.0
+        assert_matches_oracle(run[f"{prefix}counts"], counts - on_edge, rtol=0.0)
+        # some particles are outside, and some inside
+        assert 0 < run[f"{prefix}counts"].sum() < len(run["position"]) - 1
+
+    @pytest.mark.parametrize("name", CLOSURES)
+    def test_the_runs_fill_their_cells(self, name: str) -> None:
+        assert reference_values("residence")[f"{name}_concentration"].sum() > 0.0
+        assert reference_values("footprint")[f"{name}_footprint"].sum() > 0.0
+
+    def test_the_wind_is_read_outside_its_grid(self) -> None:
+        assert (np.abs(reference_values("wind")["position"][:, 0]) > 25.0).any()

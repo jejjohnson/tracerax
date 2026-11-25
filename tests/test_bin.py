@@ -17,7 +17,7 @@ from _harness import (
     assert_matches_oracle,
     assert_traces,
 )
-from _oracles import plumax_values
+from _reference import CLOSURES, reference_values
 from hypothesis import given, strategies as st
 from integrix.adjoint import Checkpointed
 from scipy.interpolate import RegularGridInterpolator
@@ -52,7 +52,6 @@ from tracerax.velocity import uniform, uniform_in_space
 
 KEY = jax.random.key(0)
 KINDS = ("nearest", "linear")
-CLOSURES = {"homogeneous": Homogeneous(), "linear": LinearSigma()}
 
 # one axis of each: uniform, stretched, and stretched with a single wide end cell
 UNIFORM = (
@@ -195,10 +194,10 @@ class TestCells:
         assert_traces(lambda *edges: Cells(edges).volumes(), *edges)
 
 
-class TestAgainstPlumax:
+class TestAgainstNumPy:
     @pytest.mark.parametrize("prefix", ["", "stretched_"])
-    def test_bin_positions(self, prefix: str) -> None:
-        stored = plumax_values("binning")
+    def test_counts(self, prefix: str) -> None:
+        stored = reference_values("binning")
         cells = Cells([stored[f"{prefix}{axis}_edges"] for axis in "xyz"])
         position = jnp.asarray(stored["position"])
         counts = deposit(cells, position, jnp.ones(len(position)))
@@ -446,7 +445,7 @@ class TestDeposit:
             deposit(cells, position[:, :2], weight, kind="cubic")  # ty: ignore
 
 
-def _plumax_cells(stored: dict[str, np.ndarray], axes: str) -> Cells:
+def _reference_cells(stored: dict[str, np.ndarray], axes: str) -> Cells:
     domains = [stored[f"domain_{axis}"] for axis in axes]
     return Cells([np.linspace(low, high, int(n) + 1) for low, high, n in domains])
 
@@ -478,11 +477,11 @@ RUN = {"t0": 0.0, "duration": 602.0, "step_size": 5.0}
 
 class TestResidence:
     @pytest.mark.parametrize("name", CLOSURES)
-    def test_plumax(self, name: str) -> None:
-        """G2-plumax: the residence, the concentration and the column."""
-        stored = plumax_values("residence")
+    def test_a_run(self, name: str) -> None:
+        """G2-reference: the residence, the concentration and the column."""
+        stored = reference_values("residence")
         size = int(stored["size"])
-        # plumax's order: the second key draws the velocities
+        # the second key draws the velocities
         key, key_velocity = jax.random.split(jax.random.PRNGKey(int(stored["seed"])))
         state = at_point(stored["source"], size)
         state = with_turbulent_velocity(state, CLOSURES[name], key=key_velocity)
@@ -492,7 +491,7 @@ class TestResidence:
             CLOSURES[name],
             Walls(0.0, float(stored["lid"])),
         )
-        cells = _plumax_cells(stored, "xyz")
+        cells = _reference_cells(stored, "xyz")
         result = integrate(
             state,
             step,

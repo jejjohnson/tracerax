@@ -13,10 +13,10 @@ from _closures import Homogeneous, LinearSigma
 from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _oracles import (
     SolidBodyRotation,
-    plumax_values,
     taylor_variance,
     uniform_wind_position,
 )
+from _reference import CLOSURES, reference_values
 from _sampling import assert_mean, assert_uniform, assert_variance
 from functax.geometry import Axis, RectilinearGrid
 from functax.interp import Policies
@@ -46,7 +46,6 @@ from tracerax.velocity import GriddedVelocity, cgrid_grids, uniform, uniform_in_
 
 
 KEY = jax.random.key(0)
-CLOSURES = {"homogeneous": Homogeneous(), "linear": LinearSigma()}
 ROTATION = SolidBodyRotation(2.0 * np.pi / 100.0)
 WIND = uniform_in_space(lambda t: jnp.array([2.0 + jnp.sin(t / 100.0), 1.0, 0.0]))
 STEP = Langevin(WIND, LinearSigma(), Walls(0.0, 50.0))
@@ -126,7 +125,7 @@ class TestTheSteps:
         assert (lengths > 0.0).all()
 
 
-class TestAgainstPlumax:
+class TestAgainstNumPy:
     @staticmethod
     def _wind(stored: dict[str, np.ndarray], kind: str) -> Any:
         constant, slope = jnp.asarray(stored["wind"])
@@ -144,8 +143,8 @@ class TestAgainstPlumax:
 
     @pytest.mark.parametrize("kind", ["uniform", "gridded"])
     @pytest.mark.parametrize("name", CLOSURES)
-    def test_integrate_particles(self, name: str, kind: str) -> None:
-        stored = plumax_values("trajectory")
+    def test_a_trajectory(self, name: str, kind: str) -> None:
+        stored = reference_values("trajectory")
         expected = stored[f"{name}_trajectory"]
         state = at_point(
             jnp.zeros(3), expected.shape[1], release_time=float(stored["t0"])
@@ -167,7 +166,7 @@ class TestAgainstPlumax:
             key=jnp.asarray(stored["key"]),
             save_every=1,
         )
-        # G1-plumax, with positions of order 100 m
+        # G1-reference, with positions of order 100 m
         assert_matches_oracle(result.trajectory, expected, rtol=1e-12, atol=1e-11)
         assert_matches_oracle(
             result.state.velocity, stored[f"{name}_velocity"], rtol=1e-12, atol=1e-12
@@ -175,7 +174,7 @@ class TestAgainstPlumax:
 
     @staticmethod
     def _release(stored: dict[str, np.ndarray], name: str, where: str, time: float):
-        """plumax's release, and the key it leaves for the steps."""
+        """The release at a point, and the key it leaves for the steps."""
         key, key_velocity = jax.random.split(jax.random.PRNGKey(int(stored["seed"])))
         state = at_point(stored[where], int(stored["size"]), release_time=time)
         return with_turbulent_velocity(state, CLOSURES[name], key=key_velocity), key
@@ -186,7 +185,7 @@ class TestAgainstPlumax:
 
     @pytest.mark.parametrize("name", CLOSURES)
     def test_residence(self, name: str) -> None:
-        stored = plumax_values("residence")
+        stored = reference_values("residence")
         state, key = self._release(stored, name, "source", 0.0)
         edges = tuple(self._edges(stored[f"domain_{axis}"]) for axis in "xyz")
         result = integrate(
@@ -211,7 +210,7 @@ class TestAgainstPlumax:
 
     @pytest.mark.parametrize("name", CLOSURES)
     def test_footprint_backward(self, name: str) -> None:
-        stored = plumax_values("footprint")
+        stored = reference_values("footprint")
         time = float(stored["receptor_time"])
         state, key = self._release(stored, name, "receptor", time)
         edges = tuple(self._edges(stored[f"domain_{axis}"]) for axis in "xy")

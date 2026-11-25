@@ -46,7 +46,7 @@ Each foundation brings a rule. Breaking one runs fine on your machine and fails 
 | **einx** | Reductions, contractions, broadcasts and rearranges | No `axis=`, `.T`, `reshape` or `[:, None]` on dense arrays. |
 | **jaxtyping** | Array annotations | Named dims from the shared vocabulary ("House style"); checked at runtime in tests through the import hook in `tests/conftest.py`. |
 | **gridax** (extra `gridax`) | Grids and masks, for the adapters that read one | Imported inside the function that needs it; gridax requires Python below 3.14. |
-| **SciPy, hypothesis, beartype** (the `test` group) | Reference results, property tests, the runtime type checker | Never imported by `src/`. plumax is never a test dependency, because plumax will import tracerax; its values are stored in `tests/data/` ([#15](https://github.com/jejjohnson/tracerax/issues/15)). |
+| **SciPy, hypothesis, beartype** (the `test` group) | Reference results, property tests, the runtime type checker | Never imported by `src/`. plumax is never a test dependency, because plumax imports tracerax. |
 | **pytest + `--doctest-modules`** | The suite and every docstring `Examples:` block | An example's expected output is what the code prints; a stale example is a failing test. |
 
 ## Reuse before you write
@@ -129,7 +129,7 @@ Most rules here are tests, so CI tells you when one breaks. Read a test's docstr
 | `tests/test_build_docs.py` | The two-tool docs pipeline: inventory parsing, anchor repair, link checking, the inventory port and the absolute nav URL in `docs/myst.yml`, the files copied to the site root (`ROOT_FILES`) |
 | `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; hypothesis has no deadline, because the first example compiles; tests marked `gridax` are skipped when it is not installed |
 | `tests/test_import_isolation.py` | Importing every module loads no stack library but functax, integrix and their own dependencies, and not gridax even when it is installed |
-| `tests/test_harness.py` | The harness itself: one toy step passes every check, each check fails on a wrong function, each closed form agrees with an independent evaluation, and every stored plumax value is reproduced in NumPy |
+| `tests/test_harness.py` | The harness itself: one toy step passes every check, each check fails on a wrong function, each closed form agrees with an independent evaluation, and the reference runs are what they say |
 | CI job "with the gridax extra" | The `gridax` extra installs, and the tests pass with it |
 | `uv sync --locked` in every test job | `uv.lock` matches the pins in `pyproject.toml` |
 | `[tool.coverage.report] fail_under = 90` | Coverage of `src/tracerax` in every coverage-enabled run (CI, `uv run poe test-cov`) |
@@ -138,14 +138,14 @@ Most rules here are tests, so CI tells you when one breaks. Read a test's docstr
 
 Each function brings four tests, as `add-particle-function` lays out, with the helpers of `tests/` ([#15](https://github.com/jejjohnson/tracerax/issues/15)):
 
-1. **Oracle**: a closed form or stored plumax values, at a stated tolerance, in float64 (`assert_matches_oracle`, `tests/_oracles.py`). A linear map and its transpose also get the dot-product test (`assert_adjoint`).
+1. **Oracle**: a closed form (`tests/_oracles.py`) or a run written out in NumPy (`tests/_reference.py`), at a stated tolerance, in float64 (`assert_matches_oracle`). A linear map and its transpose also get the dot-product test (`assert_adjoint`).
 2. **Transforms**: eager, `jit` and `vmap` over a batch of one agree (`assert_traces`).
 3. **Gradients**: autodiff against central differences at a fixed key, where the function is smooth (`assert_grad_matches_fd`).
 4. **Masks**: an inactive or unreleased particle changes nothing and stays finite.
 
 A result that is a sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key. `tests/_closures.py` holds the two turbulence closures.
 
-plumax will import tracerax, so its values are stored in `tests/data/`, with the plumax commit in each file name, by `write_plumax.py`, which refuses another commit and has a `--check`. Every stored case is one where a single reflection per wall is enough ([plumax#392](https://github.com/jejjohnson/plumax/issues/392)). Add an array there rather than a test dependency, and reproduce it in `tests/test_harness.py`.
+`tests/_reference.py` holds the reference runs: a Langevin step, a trajectory, the counts, the residence, the footprint and a gridded wind, in NumPy and SciPy, with none of tracerax's code. They reproduced plumax's own values at `96449d2` to 1e-12, before plumax took its particles from tracerax ([plumax#410](https://github.com/jejjohnson/plumax/issues/410)), so a change of those numbers changes plumax's.
 
 ## Recipes
 

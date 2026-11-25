@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
 from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
-from _oracles import plumax_values
+from _reference import CLOSURES, reference_values
 from _sampling import assert_uniform, assert_variance
 from hypothesis import given, strategies as st
 
@@ -28,7 +28,6 @@ from tracerax.velocity import uniform, uniform_in_space
 
 
 KEY = jax.random.key(0)
-CLOSURES = {"homogeneous": Homogeneous(), "linear": LinearSigma()}
 LID = 50.0
 LAYER = Walls(bottom=0.0, top=LID)
 
@@ -145,8 +144,8 @@ class TestWalls:
 
 class TestLangevinStep:
     @pytest.mark.parametrize("name", CLOSURES)
-    def test_it_is_plumaxs_step(self, name: str) -> None:
-        stored = plumax_values("langevin")
+    def test_it_is_the_step_in_numpy(self, name: str) -> None:
+        stored = reference_values("langevin")
         size = stored["noise"].shape[0]
         state = at_point(jnp.zeros(3), size)
         state = eqx.tree_at(
@@ -157,7 +156,7 @@ class TestLangevinStep:
                 jnp.asarray(stored[f"{name}_start_velocity"]),
             ),
         )
-        # the loop draws the noise so: the same key gives plumax's numbers
+        # the loop draws the noise so: the same key gives the same numbers
         noise = jax.random.normal(jnp.asarray(stored["key"]), (size, 3))
         moved = langevin_step(
             state,
@@ -167,7 +166,7 @@ class TestLangevinStep:
             noise,
             walls=Walls(bottom=0.0, top=float(stored["lid"])),
         )
-        # G1-plumax, with positions of order 50 m
+        # G1-reference, with positions of order 50 m
         for field in ("position", "velocity"):
             assert_matches_oracle(
                 getattr(moved, field),
@@ -326,7 +325,7 @@ class TestLangevinStep:
     @pytest.mark.slow
     @pytest.mark.parametrize("ratio", [0.1, 1.0, 10.0])
     def test_no_particle_is_outside_its_walls(self, ratio: float) -> None:
-        """G1-inside: plumax's single reflection leaves 6.8 % outside at 0.3 τ."""
+        """G1-inside: a single reflection per wall leaves 6.8 % outside at 0.3 τ."""
         closure = Homogeneous(sigma=1.5, timescale=100.0)
         state = _layer_state(5_000, closure)
         # _run counts the particles outside after every step
