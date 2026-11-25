@@ -76,6 +76,7 @@ nav:
   - Velocities: velocity.md
   - Advection: advect.md
   - Cells and concentrations: bin.md
+  - Footprints: footprint.md
   - Type aliases: typing.md
   - Exceptions: exceptions.md
 

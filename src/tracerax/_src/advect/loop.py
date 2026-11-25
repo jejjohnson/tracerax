@@ -31,6 +31,7 @@ from tracerax.exceptions import ValidationError
 __all__ = [
     "Accumulator",
     "Result",
+    "check_epoch",
     "integrate",
     "n_steps_for_horizon",
     "step_durations",
@@ -148,7 +149,7 @@ def _check_run(duration: Any, step_size: Any, t0: Any) -> None:
         raise ValidationError(f"'t0' must be a scalar, got shape {jnp.shape(t0)}")
 
 
-def _check_epoch(values: Any, name: str, step_size: float, dtype: Any) -> None:
+def check_epoch(values: Any, name: str, step_size: float, dtype: Any) -> None:
     """Raise when concrete times are too coarse in the positions' dtype.
 
     Raises:
@@ -316,8 +317,8 @@ def integrate(
     _check_run(duration, step_size, t0)
     position = state.position
     dtype = position.dtype
-    _check_epoch(t0, "t0", step_size, dtype)
-    _check_epoch(state.release_time, "release_time", step_size, dtype)
+    check_epoch(t0, "t0", step_size, dtype)
+    check_epoch(state.release_time, "release_time", step_size, dtype)
 
     # --- the steps, on the host ---
     direction = math.copysign(1.0, duration) if duration != 0.0 else 1.0

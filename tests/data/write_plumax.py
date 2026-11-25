@@ -228,7 +228,10 @@ def residence() -> Arrays:
 
 
 def footprint() -> Arrays:
-    """`compute_footprint` in a wind that varies in time, with a short first step."""
+    """`compute_footprint` in a steady wind and in one that varies in time.
+
+    Both have a short first step.
+    """
     from plumax.lagrangian import compute_footprint
 
     domain_x, domain_y = (-580.0, 20.0, 20), (-80.0, 160.0, 12)
@@ -250,17 +253,19 @@ def footprint() -> Arrays:
         "size": np.asarray(SIZE),
         **{name: np.asarray(value) for name, value in options.items()},
     }
+    winds = {"": _wind, "steady_": lambda t: jnp.asarray(_WIND[0])}
     for name, closure in CLOSURES.items():
-        values, _, _ = compute_footprint(
-            receptor,
-            closure,
-            domain_x,
-            domain_y,
-            wind=_wind,
-            n_particles=SIZE,
-            **options,
-        )
-        out[f"{name}_footprint"] = values
+        for prefix, wind in winds.items():
+            values, _, _ = compute_footprint(
+                receptor,
+                closure,
+                domain_x,
+                domain_y,
+                wind=wind,
+                n_particles=SIZE,
+                **options,
+            )
+            out[f"{prefix}{name}_footprint"] = values
     return out
 
 

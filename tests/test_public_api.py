@@ -21,6 +21,7 @@ SUBMODULES = [
     "advect",
     "bin",
     "exceptions",
+    "footprint",
     "particles",
     "velocity",
 ]
