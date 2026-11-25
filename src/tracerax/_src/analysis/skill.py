@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import einx
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -29,23 +30,27 @@ __all__ = [
 ]
 
 
-def _check_bounds(name: str, value: ScalarLike, *, zero: bool) -> None:
-    """Raise unless it is one number, finite and above zero, or on it, if concrete.
+def _checked_bound(name: str, value: ScalarLike, *, zero: bool) -> ScalarLike:
+    """The number, checked to be one, finite, and above zero or on it.
 
     Raises:
-        ValidationError: If it is not.
+        ValidationError: If it is not a scalar, or a concrete one is out of range.
+        EquinoxRuntimeError: If a traced one is.
     """
     if jnp.shape(value) != ():
         raise ValidationError(
             f"'{name}' must be a scalar, got shape {jnp.shape(value)}"
         )
-    if not is_concrete(value):
-        return
-    number = np.asarray(value)
+    words = "a finite length of at least 0" if zero else "finite and positive"
+    concrete = is_concrete(value)
+    number = np.asarray(value) if concrete else jnp.asarray(value)
     above = number >= 0.0 if zero else number > 0.0
-    if not (np.isfinite(number) and above):
-        words = "a finite length of at least 0" if zero else "finite and positive"
+    inside = above & (number < np.inf)
+    if not concrete:
+        return eqx.error_if(number, ~inside, f"'{name}' must be {words}")
+    if not inside:
         raise ValidationError(f"'{name}' must be {words}, got {value}")
+    return value
 
 
 def _paired(
@@ -181,7 +186,7 @@ def cumulative_separation(
         >>> float(cumulative_separation(simulated, observed))
         0.5
     """
-    _check_bounds("min_length", min_length, zero=True)
+    min_length = _checked_bound("min_length", min_length, zero=True)
     trajectory, reference, observed = _paired(trajectory, reference, distance, earth)
     apart = distance_between(trajectory, reference, distance, earth)
     length = _length_travelled(reference, observed, distance, earth)
@@ -241,7 +246,7 @@ def skill_score(
         >>> float(skill_score(simulated, observed, tolerance=0.4))
         0.0
     """
-    _check_bounds("tolerance", tolerance, zero=False)
+    tolerance = _checked_bound("tolerance", tolerance, zero=False)
     s = cumulative_separation(
         trajectory,
         reference,

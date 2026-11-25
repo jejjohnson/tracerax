@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import einx
+import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from geophysix.earth import SPHERE, Ellipsoid
@@ -134,6 +135,7 @@ def pair_dispersion(
         ValidationError: If the trajectory has not three axes, the pairs two
             columns, a concrete pair names a particle that is not there, or
             ``distance`` is unknown, or does not fit the trajectory.
+        EquinoxRuntimeError: If a traced pair does.
 
     Examples:
         >>> import jax.numpy as jnp
@@ -149,13 +151,13 @@ def pair_dispersion(
     if pairs.ndim != 2 or pairs.shape[1] != 2:
         raise ValidationError(f"'pairs' must be (pair, 2), got shape {pairs.shape}")
     n_particles = trajectory.shape[1]
-    if is_concrete(pairs) and pairs.size:
+    words = f"'pairs' must name particles from 0 to {n_particles - 1}"
+    if not is_concrete(pairs):
+        pairs = eqx.error_if(pairs, (pairs < 0) | (pairs >= n_particles), words)
+    elif pairs.size:
         members = np.asarray(pairs)
         if members.min() < 0 or members.max() >= n_particles:
-            raise ValidationError(
-                f"'pairs' must name particles from 0 to {n_particles - 1}, "
-                f"got {members.min()} to {members.max()}"
-            )
+            raise ValidationError(f"{words}, got {members.min()} to {members.max()}")
     left, right = trajectory[:, pairs[:, 0]], trajectory[:, pairs[:, 1]]
     counted = known(left) & known(right)
     return _mean_squared(left, right, counted, distance, earth)

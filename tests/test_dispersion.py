@@ -225,6 +225,10 @@ def test_invalid() -> None:
     for pairs in ([[0, 6]], [[-1, 0]]):
         with pytest.raises(ValidationError, match="'pairs' must name"):
             pair_dispersion(trajectory, jnp.array(pairs))
+        with pytest.raises(RuntimeError, match="'pairs' must name"):
+            eqx.filter_jit(lambda pairs: pair_dispersion(trajectory, pairs))(
+                jnp.array(pairs)
+            )
     with pytest.raises((ValidationError, TypeError), match="pairs"):
         pair_dispersion(trajectory, jnp.array([[0, 1, 2]]))
     with pytest.raises((ValidationError, TypeError), match="trajectory"):

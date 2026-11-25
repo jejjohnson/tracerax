@@ -6,6 +6,7 @@ import inspect
 from typing import Any
 
 import diffrax as dfx
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -330,9 +331,27 @@ def test_invalid(fn: Any) -> None:
         fn(globe, globe, distance="sphere", earth=WGS84)
 
 
+def test_traced_bounds_are_checked_when_the_program_runs() -> None:
+    observed = _observed("euclidean")
+
+    @eqx.filter_jit
+    def score(tolerance: jax.Array, min_length: jax.Array) -> jax.Array:
+        return skill_score(
+            observed, observed, tolerance=tolerance, min_length=min_length
+        )
+
+    assert float(score(jnp.asarray(0.5), jnp.asarray(1.0))) == 1.0
+    for value in (0.0, -1.0, np.nan, np.inf):
+        with pytest.raises(RuntimeError, match="'tolerance' must be"):
+            score(jnp.asarray(value), jnp.asarray(1.0))
+    for value in (-1.0, np.nan, np.inf):
+        with pytest.raises(RuntimeError, match="'min_length' must be"):
+            score(jnp.asarray(0.5), jnp.asarray(value))
+
+
 def test_traced_latitudes_beyond_a_pole_are_refused() -> None:
     swapped = _observed("sphere")[:, ::-1]
-    score = jax.jit(lambda x, y: cumulative_separation(x, y, distance="sphere"))
+    score = eqx.filter_jit(lambda x, y: cumulative_separation(x, y, distance="sphere"))
     with pytest.raises(RuntimeError, match="must hold latitudes"):
         score(swapped, swapped)
 
