@@ -34,6 +34,27 @@ Four things to know:
 - **Forward mode** (`jax.jacfwd`) needs `adjoint=diffrax.ForwardMode()` in `deterministic`. `Deterministic` supports both modes as it is.
 - **A domain's wall** is crossed at first order: a particle stops within one step of it.
 
+## The sphere
+
+`deterministic_sphere` and `DeterministicSphere` move particles in longitude and latitude, in degrees, along an eastward and northward velocity in m s⁻¹. The step works on unit vectors, so a path may cross the date line and the poles.
+
+```python
+from tracerax.advect import DeterministicSphere, deterministic_sphere
+from tracerax.particles import at_point
+from tracerax.velocity import uniform
+
+drifter = at_point(jnp.array([179.9, 0.0]), 1)
+current = uniform(jnp.array([1.0, 0.0]))
+final, _ = deterministic_sphere(drifter, current, t0=0.0, duration=86400.0, n_steps=24)
+```
+
+- **Longitudes come back in [−180°, 180°)**, so a path across the date line jumps by 360°. Distances along it are great-circle distances (`geophysix.earth.great_circle_distance`), never differences of longitude.
+- **A global grid** needs a periodic longitude axis, `functax.geometry.Axis(..., period=360.0)`. A regional grid must have the longitudes of the particles, in [−180°, 180°), until [functax#170](https://github.com/jejjohnson/functax/issues/170): with a period it is read across its gap.
+- **Near a pole** the two components turn quickly with longitude, so the read of a grid is the limit and not the step. Within 0.1 m of a pole in float64, and 2 km in float32, the velocity is read at that distance from it, so that its derivatives are right. The derivative of a longitude is not defined at a pole itself.
+- **Float32** resolves 1.7 m of longitude, and a step's rounding can have the same sign at every step. `DeterministicSphere` returns to longitude and latitude at every step: at 6 m per step a month's path was 4 % off, and at 1.5 m per step a particle did not move at all. `deterministic_sphere` steps unit vectors, which resolve 0.4 m. Take steps that move particles by hundreds of metres, or float64.
+- **A `Box`** under the loop is in degrees, cannot cross the date line, and is half open: release a particle at −180° and not at 180°.
+- **Depth** is not here: the two columns are all there is.
+
 ## Turbulence
 
 `Langevin` adds a turbulent velocity with a memory: a Markov-1 process whose standard deviation σ and Lagrangian time scale τ_L come from a closure you pass in. The closures are not here: any object whose `at(height)` returns σ and τ_L is a `TurbulenceModel`, and plumax's are.

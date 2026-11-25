@@ -6,11 +6,11 @@ tracerax is the GeoStack's library of Lagrangian particles: it carries a set of 
 
 It is written in JAX: every function is pure, its shapes are static, and the caller calls `jax.jit` once, at the top. Particles are masked, never dropped, so a run can be differentiated.
 
-tracerax writes no interpolation, binning or time stepper of its own. [functax](https://github.com/jejjohnson/functax) reads the velocity and bins the particles, and [integrix](https://github.com/jejjohnson/integrix) gives the solvers and the adjoints. Turbulence closures, plume physics and source inversions are [plumax](https://github.com/jejjohnson/plumax)'s.
+tracerax writes no interpolation, binning or time stepper of its own. [functax](https://github.com/jejjohnson/functax) reads the velocity and bins the particles, and [integrix](https://github.com/jejjohnson/integrix) gives the solvers and the adjoints, and [geophysix](https://github.com/jejjohnson/geophysix) the sphere. Turbulence closures, plume physics and source inversions are [plumax](https://github.com/jejjohnson/plumax)'s.
 
 ## Installation
 
-tracerax is not on PyPI yet, and neither are [functax](https://github.com/jejjohnson/functax) and [integrix](https://github.com/jejjohnson/integrix), which it builds on, so it installs from a clone.
+tracerax is not on PyPI yet, and neither are [functax](https://github.com/jejjohnson/functax), [integrix](https://github.com/jejjohnson/integrix) and [geophysix](https://github.com/jejjohnson/geophysix), which it builds on, so it installs from a clone.
 
 ```bash
 git clone https://github.com/jejjohnson/tracerax.git
