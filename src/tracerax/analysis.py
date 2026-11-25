@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tracerax._src.analysis.ftle import ftle
 from tracerax._src.analysis.regions import (
     Regions,
     RegionTime,
@@ -14,5 +15,6 @@ __all__ = [
     "RegionTime",
     "Regions",
     "connectivity",
+    "ftle",
     "visited_connectivity",
 ]
