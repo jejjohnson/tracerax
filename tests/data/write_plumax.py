@@ -146,7 +146,7 @@ def trajectory() -> Arrays:
 
 
 def binning() -> Arrays:
-    """`bin_positions` on uniform edges, with particles outside and on edges."""
+    """`bin_positions` on uniform and stretched edges, with particles on edges."""
     from plumax.lagrangian import bin_positions
 
     position = np.asarray(_state(CLOSURES["homogeneous"], seed=4).position).copy()
@@ -158,12 +158,25 @@ def binning() -> Arrays:
     position[1] = (x_edges[-1], 0.0, 1.0)
     edges = (x_edges, y_edges, z_edges)
     counts = bin_positions(jnp.asarray(position), *map(jnp.asarray, edges))
+    # the same particles, the two on edges included, on cells that grow
+    stretched = (
+        np.array([-40.0, -35.0, -24.0, x_edges[3], 0.0, 2.0, 40.0]),
+        np.array([-60.0, -50.0, y_edges[2], 10.0, 60.0]),
+        np.array([0.0, 1.0, 3.0, z_edges[1], 20.0, 40.0]),
+    )
+    stretched_counts = bin_positions(
+        jnp.asarray(position), *map(jnp.asarray, stretched)
+    )
     return {
         "position": position,
         "x_edges": x_edges,
         "y_edges": y_edges,
         "z_edges": z_edges,
         "counts": np.asarray(counts),
+        "stretched_x_edges": stretched[0],
+        "stretched_y_edges": stretched[1],
+        "stretched_z_edges": stretched[2],
+        "stretched_counts": np.asarray(stretched_counts),
     }
 
 
