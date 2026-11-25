@@ -12,7 +12,13 @@ from functax.interp import Binning, Stencil, TransposedStencil
 from jaxtyping import Array, Float
 
 from tracerax._src.advect.masks import stand_in
-from tracerax._src.bin.cells import Cells, cell_centres, edges_in, host_axes
+from tracerax._src.bin.cells import (
+    Cells,
+    cell_centres,
+    check_columns,
+    edges_in,
+    host_axes,
+)
 from tracerax.exceptions import ValidationError
 
 
@@ -66,7 +72,9 @@ def deposit(
             centres and has the gradient zero in the outer half cells.
 
     Returns:
-        c, the sum per cell, in the units of ``weight`` and the positions' dtype.
+        c, the sum per cell, in the units of ``weight`` and the positions' dtype. A
+        float32 sum loses digits with the number of equal weights in one cell: of
+        the order of 1e-3 of it at 10⁵ and 1e-2 at 10⁶.
 
     Raises:
         ValidationError: If ``kind`` is unknown, ``position`` has not one column
@@ -91,7 +99,9 @@ def deposit(
         [1.0, 1.0, 1.0]
     """
     check_kind(kind)
-    edges = edges_in(cells, position)
+    position, weight = jnp.asarray(position), jnp.asarray(weight)
+    check_columns(cells, position)
+    edges = edges_in(cells, position.dtype)
     if weight.shape != position.shape[:1]:
         raise ValidationError(
             f"'weight' must have one entry per particle, {position.shape[:1]}, "

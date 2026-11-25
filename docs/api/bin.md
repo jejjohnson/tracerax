@@ -24,6 +24,6 @@ concentration = deposited / cells.volumes()
 - **Mass.** Both keep the whole weight of every particle inside the edges, on stretched cells and at the walls: a particle within half a cell of the ground counts in full in the lowest cell. What is outside the edges is dropped.
 - **Edges.** A cell holds its lower edge and not its upper one, so a particle on an inner edge belongs to the upper cell and one on the last edge is outside. This differs from `numpy.histogram` at the last edge.
 - **Axes.** The cells have one axis per position column, in their order. For a map of a plume, pass two axes and `position[:, :2]`.
-- **Precision.** Edges are compared in the positions' dtype, and a cell too narrow for it raises, so count both from a local origin in float32. Cells built from concrete edges cost no check at run time.
+- **Precision.** Edges are compared in the positions' dtype, and a cell too narrow for it raises, so count both from a local origin in float32. A float32 sum also loses digits with the number of equal weights in one cell: of the order of 1e-3 of it at 10⁵ and 1e-2 at 10⁶. Cells built from concrete edges cost no check at run time.
 
 ::: tracerax.bin

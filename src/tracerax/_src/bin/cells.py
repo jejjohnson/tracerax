@@ -20,15 +20,32 @@ from tracerax.exceptions import ValidationError
 __all__ = [
     "Cells",
     "cell_centres",
+    "check_columns",
     "edges_in",
     "host_axes",
 ]
 
 
 def _as_edges(edges: Any) -> tuple[Any, ...]:
-    """The edges as floating arrays: integers become JAX's default float."""
-    arrays = [jnp.asarray(edge) for edge in edges]
-    return tuple(array.astype(jnp.result_type(array, float)) for array in arrays)
+    """The edges as floating arrays: integers become JAX's default float.
+
+    Traced edges are checked when the program runs.
+    """
+    edges = tuple(edges)
+    with host_axes(edges):
+        arrays = [jnp.asarray(edge) for edge in edges]
+        arrays = [array.astype(jnp.result_type(array, float)) for array in arrays]
+    checked = []
+    for index, array in enumerate(arrays):
+        if not is_concrete(array) and array.ndim == 1:
+            ordered = jnp.all(jnp.diff(array) > 0.0) & jnp.all(jnp.isfinite(array))
+            array = eqx.error_if(
+                array,
+                ~ordered,
+                f"'edges[{index}]' must be finite and strictly increasing",
+            )
+        checked.append(array)
+    return tuple(checked)
 
 
 def cell_centres(edge: Any) -> Any:
@@ -44,13 +61,13 @@ def _increasing(edge: Any) -> bool:
     return bool(np.isfinite(values).all() and ordered.all())
 
 
-def host_axes(*edges: Any) -> contextlib.AbstractContextManager[Any]:
+def host_axes(edges: Any) -> contextlib.AbstractContextManager[Any]:
     """The context in which to build functax axes from the edges.
 
     An axis checks its nodes. Under a trace that check is a host callback at every
     step of a run, unless the nodes are concrete and are kept so.
     """
-    if is_concrete(*edges):
+    if is_concrete(edges):
         return jax.ensure_compile_time_eval()
     return contextlib.nullcontext()
 
@@ -68,7 +85,8 @@ class Cells(eqx.Module):
 
     Raises:
         ValidationError: If there are not 1, 2 or 3 axes, or the edges of one are
-            not 1-D, finite and strictly increasing, with at least two values.
+            not 1-D, finite and strictly increasing, with at least two values. Of
+            traced edges the values are checked when the program runs.
 
     Examples:
         Two cells by three, the second axis stretched:
@@ -141,7 +159,9 @@ class Cells(eqx.Module):
         Raises:
             ValidationError: If ``position`` has another number of columns.
         """
-        edges = edges_in(self, position)
+        position = jnp.asarray(position)
+        check_columns(self, position)
+        edges = edges_in(self, position.dtype)
         inside = jnp.ones(position.shape[0], dtype=bool)
         for index, edge in enumerate(edges):
             column = position[:, index]
@@ -150,12 +170,11 @@ class Cells(eqx.Module):
         return inside
 
 
-def edges_in(cells: Cells, position: Float[Array, "particle axis"]) -> tuple[Any, ...]:
-    """The edges in the positions' dtype, on the host unless they are traced.
+def check_columns(cells: Cells, position: Float[Array, "particle axis"]) -> None:
+    """Raise unless the positions have one column per axis of the cells.
 
     Raises:
-        ValidationError: If ``position`` has not one column per axis, or a
-            cell is too narrow for its dtype.
+        ValidationError: If they have not.
     """
     n_axes = len(cells.edges)
     if position.ndim != 2 or position.shape[1] != n_axes:
@@ -163,14 +182,24 @@ def edges_in(cells: Cells, position: Float[Array, "particle axis"]) -> tuple[Any
             f"'position' must have one column per axis of the cells, {n_axes}, "
             f"got shape {position.shape}"
         )
-    dtype = position.dtype
+
+
+def edges_in(cells: Cells, dtype: Any) -> tuple[Any, ...]:
+    """The edges in the positions' dtype, on the host unless they are traced.
+
+    Raises:
+        ValidationError: If a cell is too narrow for the dtype, which changes its
+            width by more than a hundredth.
+    """
     cast = []
     for index, edge in enumerate(cells.edges):
         if not is_concrete(edge):
             cast.append(edge.astype(dtype))
             continue
         values = np.asarray(edge).astype(dtype)
-        if not _increasing(values):
+        widths = np.diff(np.asarray(edge))
+        rounding = np.abs(np.diff(values) - widths)
+        if not _increasing(values) or (rounding > 0.01 * widths).any():
             raise ValidationError(
                 f"the cells of 'edges[{index}]' are too narrow for {dtype} positions; "
                 "count positions and edges from a local origin"

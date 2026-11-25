@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 import jax
@@ -19,7 +20,10 @@ from hypothesis import given, strategies as st
 from scipy.interpolate import RegularGridInterpolator
 
 from tracerax import ValidationError
-from tracerax.bin import Cells, deposit
+from tracerax.bin import (
+    Cells,
+    deposit,
+)
 
 
 KINDS = ("nearest", "linear")
@@ -147,6 +151,13 @@ class TestCells:
     def test_bad_edges(self, edges: Any, message: str) -> None:
         with pytest.raises(ValidationError, match=message):
             Cells(edges)
+
+    @pytest.mark.parametrize(
+        "edge", [[2.0, 1.0, 0.0], [0.0, 2.0, 1.0, 3.0], [0.0, np.nan], [0.0, np.inf]]
+    )
+    def test_bad_traced_edges(self, edge: list[float]) -> None:
+        with pytest.raises(RuntimeError, match="strictly increasing"):
+            jax.jit(lambda edge: Cells((edge,)).volumes())(jnp.asarray(edge))
 
     def test_traces(self) -> None:
         position, _ = _particles(UNIFORM, size=96)
@@ -373,6 +384,27 @@ class TestDeposit:
             deposit(
                 cells, position.astype(jnp.float32), jnp.ones(1, jnp.float32), kind=kind
             )
+
+    def test_a_width_that_float32_changes(self) -> None:
+        """Increasing in float32 is not enough: the widths must survive."""
+        edge = 1e5 + np.array([0.0, 0.02, 0.04, 0.06])
+        assert (np.diff(edge.astype(np.float32)) > 0.0).all()
+        position = jnp.full((1, 1), 1e5, jnp.float32)
+        with pytest.raises(ValidationError, match="too narrow for float32 positions"):
+            deposit(Cells((edge,)), position, jnp.ones(1, jnp.float32))
+
+    @pytest.mark.parametrize("kind", KINDS)
+    def test_numpy_positions_are_those_of_jax(self, kind: str) -> None:
+        """Without x64 they are float32 from the start: 2 − 1e-10 is the edge."""
+        cells = Cells(([0.0, 1.0, 2.0], [0.0, 1.0, 2.0]))
+        position, weight = np.array([[0.5, 1.9999999999]]), np.ones(1)
+        # jaxtyping's hook, on in the tests only, refuses NumPy arrays
+        bare = inspect.unwrap(deposit)
+        assert bare(cells, position, weight, kind=kind).sum() == 1.0
+        with jax.enable_x64(False):
+            narrow = Cells(([0.0, 1.0, 2.0], [0.0, 1.0, 2.0]))
+            assert (bare(narrow, position, weight, kind=kind) == 0.0).all()
+            assert not inspect.unwrap(Cells.contains)(narrow, position).any()
 
     def test_bad_arguments(self) -> None:
         cells = Cells(UNIFORM[:2])
