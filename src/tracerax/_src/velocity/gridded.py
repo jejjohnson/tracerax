@@ -202,12 +202,12 @@ def _half_spacing(values: Float[Array, " node"], name: str) -> Float[Array, ""]:
     spacing = (values[-1] - values[0]) / (size - 1)
     if is_concrete(values):
         nodes = np.asarray(values)
+        # in NumPy, because `spacing` is traced under a transformation
         steps = np.diff(nodes)
+        mean_step = (nodes[-1] - nodes[0]) / (size - 1)
         # rounding of nodes as large as the largest, whatever the dtype
         tolerance = 8.0 * np.finfo(nodes.dtype).eps * np.abs(nodes).max()
-        if np.abs(steps - float(spacing)).max() > max(
-            tolerance, 1e-6 * abs(float(spacing))
-        ):
+        if np.abs(steps - mean_step).max() > max(tolerance, 1e-6 * abs(mean_step)):
             raise ValidationError(
                 f"'{name}' must be uniformly spaced for a C-grid; give "
                 "GriddedVelocity.fit the grids of a stretched one"
