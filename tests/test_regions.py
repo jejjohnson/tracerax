@@ -103,7 +103,7 @@ class TestRegions:
     def test_traced_labels_are_checked_when_the_program_runs(self) -> None:
         position = _scattered(5)
 
-        @jax.jit
+        @eqx.filter_jit
         def at(labels: jax.Array) -> jax.Array:
             return Regions(CELLS, labels, n_regions=3).at(position)
 
