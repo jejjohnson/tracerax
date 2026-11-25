@@ -18,7 +18,7 @@ The diff (`git diff <base>...HEAD`, default base `main`) or the files / commit r
    - the private helpers in the "Reuse before you write" table of `AGENTS.md`;
    - a grep of `src/` for the key operation (`searchsorted`, `map_coordinates`, `histogram`, `segment_sum`, `jax.checkpoint`, `lax.scan`, `stop_gradient`, `6371`, the error-message text).
 3. Also flag, wherever they appear in the diff:
-   - an interpolation weight, a bin index, a deposit, a cell area or a quadrature rule → functax (`Interpolant`, `Binning`, `functax.quad`);
+   - an interpolation weight or a quadrature rule → functax (`Interpolant`, `functax.quad`); a bin index, a deposit or a cell volume → `tracerax.bin` (`Cells`, `deposit`), which wraps functax's;
    - an RK stage, a Butcher tableau, a checkpointed or truncated scan → integrix or diffrax;
    - a second particle loop, or a step with its own release or mask logic → a `ParticleStep` run by the one loop;
    - a turbulence closure, a mixing length, a plume or a source inversion → plumax, passed in as an argument;

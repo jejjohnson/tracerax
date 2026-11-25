@@ -561,7 +561,8 @@ class TestTheStoredPlumaxValues:
         assert_matches_oracle(stored[f"{name}_concentration"], expected, rtol=RTOL)
 
     @pytest.mark.parametrize("name", CLOSURES)
-    def test_footprint(self, name: str) -> None:
+    @pytest.mark.parametrize("prefix", ["", "steady_"])
+    def test_footprint(self, prefix: str, name: str) -> None:
         stored = plumax_values("footprint")
         size, lid = int(stored["size"]), float(stored["pbl_height"])
         position, velocity, key = _released(
@@ -576,7 +577,7 @@ class TestTheStoredPlumaxValues:
         residence = np.zeros([len(axis) - 1 for axis in edges])
         for step, duration in enumerate(durations):
             noise = np.asarray(jax.random.normal(keys[step], (size, 3)))
-            wind = -_wind_at(stored, starts[step])
+            wind = -_wind_at(stored, 0.0 if prefix else starts[step])
             position, velocity = _langevin(
                 name, position, velocity, wind, noise, duration, lid
             )
@@ -585,7 +586,7 @@ class TestTheStoredPlumaxValues:
             residence += counts * duration
         expected = residence / (size * float(stored["air_density"]) * depth)
         assert expected.sum() > 0.0
-        assert_matches_oracle(stored[f"{name}_footprint"], expected, rtol=RTOL)
+        assert_matches_oracle(stored[f"{prefix}{name}_footprint"], expected, rtol=RTOL)
 
     def test_wind(self) -> None:
         """u half a cell east and v half a cell north, held outside the grid."""

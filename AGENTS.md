@@ -21,7 +21,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
 | `advect` | The deterministic solve and step, the Langevin and random-displacement steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now; the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
-| `footprint` | Surface footprints from backward runs | Wave 2 ([#23](https://github.com/jejjohnson/tracerax/issues/23)) |
+| `footprint` | Surface footprints from backward runs | now |
 | `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 
 ### Boundaries
