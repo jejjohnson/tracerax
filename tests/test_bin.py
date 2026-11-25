@@ -1,14 +1,16 @@
-"""Tests for the cells and the deposits."""
+"""Tests for the cells, the deposits, the residence and the concentrations."""
 
 from __future__ import annotations
 
 import inspect
 from typing import Any
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from _closures import Homogeneous, LinearSigma
 from _harness import (
     assert_adjoint,
     assert_grad_matches_fd,
@@ -17,16 +19,40 @@ from _harness import (
 )
 from _oracles import plumax_values
 from hypothesis import given, strategies as st
+from integrix.adjoint import Checkpointed
 from scipy.interpolate import RegularGridInterpolator
 
 from tracerax import ValidationError
+from tracerax.advect import (
+    Accumulator,
+    Box,
+    Deterministic,
+    Langevin,
+    Result,
+    Walls,
+    integrate,
+)
 from tracerax.bin import (
     Cells,
+    Residence,
+    column,
+    concentration,
     deposit,
+    steady_concentration,
 )
+from tracerax.particles import (
+    ParticleState,
+    at_point,
+    in_box,
+    release_times,
+    with_turbulent_velocity,
+)
+from tracerax.velocity import uniform, uniform_in_space
 
 
+KEY = jax.random.key(0)
 KINDS = ("nearest", "linear")
+CLOSURES = {"homogeneous": Homogeneous(), "linear": LinearSigma()}
 
 # one axis of each: uniform, stretched, and stretched with a single wide end cell
 UNIFORM = (
@@ -418,3 +444,410 @@ class TestDeposit:
             deposit(cells, position[:, :2], weight[:-1])
         with pytest.raises((ValidationError, TypeError), match="kind"):
             deposit(cells, position[:, :2], weight, kind="cubic")  # ty: ignore
+
+
+def _plumax_cells(stored: dict[str, np.ndarray], axes: str) -> Cells:
+    domains = [stored[f"domain_{axis}"] for axis in axes]
+    return Cells([np.linspace(low, high, int(n) + 1) for low, high, n in domains])
+
+
+def _layer(size: int = 64) -> ParticleState:
+    """A turbulent column, 50 m deep, whose particles are released over 5 minutes."""
+    state = in_box(
+        jnp.zeros(3),
+        jnp.array([10.0, 10.0, 50.0]),
+        size,
+        mass=3.0,
+        release_time=release_times(0.0, 300.0, size),
+        key=jax.random.key(3),
+    )
+    return with_turbulent_velocity(state, LinearSigma(), key=jax.random.key(4))
+
+
+# wider than any particle goes in 10 minutes, and stretched
+WIDE = Cells(
+    (
+        np.array([-4e3, -100.0, 0.0, 5.0, 20.0, 4e3]),
+        np.array([-4e3, 3.0, 4e3]),
+        np.array([0.0, 2.0, 5.0, 30.0, 50.0]),
+    )
+)
+LAYER = Langevin(uniform(jnp.array([2.0, -1.0, 0.0])), LinearSigma(), Walls(0.0, 50.0))
+RUN = {"t0": 0.0, "duration": 602.0, "step_size": 5.0}
+
+
+class TestResidence:
+    @pytest.mark.parametrize("name", CLOSURES)
+    def test_plumax(self, name: str) -> None:
+        """G2-plumax: the residence, the concentration and the column."""
+        stored = plumax_values("residence")
+        size = int(stored["size"])
+        # plumax's order: the second key draws the velocities
+        key, key_velocity = jax.random.split(jax.random.PRNGKey(int(stored["seed"])))
+        state = at_point(stored["source"], size)
+        state = with_turbulent_velocity(state, CLOSURES[name], key=key_velocity)
+        constant, slope = jnp.asarray(stored["wind"])
+        step = Langevin(
+            uniform_in_space(lambda t: constant + t * slope),
+            CLOSURES[name],
+            Walls(0.0, float(stored["lid"])),
+        )
+        cells = _plumax_cells(stored, "xyz")
+        result = integrate(
+            state,
+            step,
+            t0=0.0,
+            duration=float(stored["duration"]),
+            step_size=float(stored["step_size"]),
+            key=key,
+            accumulate=Residence(cells),
+        )
+        rate = float(stored["emission_rate"])
+        steady = steady_concentration(result.accumulated, rate, size, cells)
+        expected = stored[f"{name}_concentration"]
+        assert_matches_oracle(steady, expected, rtol=1e-12)
+        # H = C N V / Q
+        volume = np.prod([float(edge[1] - edge[0]) for edge in cells.edges])
+        residence = expected * size * volume / rate
+        assert_matches_oracle(result.accumulated, residence, rtol=1e-12)
+        depth = float(cells.edges[2][1] - cells.edges[2][0])
+        assert_matches_oracle(
+            column(steady, cells), expected.sum(axis=2) * depth, rtol=1e-12
+        )
+
+    def test_it_is_an_accumulator(self) -> None:
+        assert isinstance(Residence(WIDE), Accumulator)
+
+    @pytest.mark.parametrize("kind", KINDS)
+    def test_between_walls_it_is_the_whole_time(self, kind: str) -> None:
+        """∑ R_j = ∑ₚ (T − t_{r,p}), with every particle inside all along."""
+        state = _layer()
+        result = integrate(
+            state, LAYER, key=KEY, accumulate=Residence(WIDE, kind=kind), **RUN
+        )
+        expected = float((602.0 - state.release_time).sum())
+        assert_matches_oracle(result.accumulated.sum(), expected, rtol=1e-12)
+        assert (result.accumulated >= 0.0).all()
+        # released at once, ∑ R_j = N T
+        at_once = eqx.tree_at(
+            lambda state: state.release_time, state, jnp.zeros(state.n_particles)
+        )
+        result = integrate(
+            at_once, LAYER, key=KEY, accumulate=Residence(WIDE, kind=kind), **RUN
+        )
+        assert_matches_oracle(result.accumulated.sum(), 64 * 602.0, rtol=1e-12)
+
+    def test_with_an_open_side_it_is_the_active_time(self) -> None:
+        """A particle counts until the step that takes it out, which it leaves."""
+        times = jnp.array([0.0, 3.5, 1e4])
+        state = at_point(jnp.array([0.5, 0.5]), 3, release_time=times)
+        cells = Cells(([0.0, 10.0, 40.0], [0.0, 1.0]))
+        result = integrate(
+            state,
+            Deterministic(uniform(jnp.array([2.0, 0.0]))),
+            t0=0.0,
+            duration=60.0,
+            step_size=1.0,
+            domain=Box([0.0, 0.0], [20.0, 1.0]),
+            accumulate=Residence(cells),
+        )
+        # x = ½ + 2 k < 10 for k ≤ 4 and < 20 for k ≤ 9
+        # and x = ½ + 2 (½ + k), from 3.5 s on: the first step lasts ½ s
+        expected = np.array([4.0 + 4.5, 5.0 + 5.0])
+        assert_matches_oracle(result.accumulated[:, 0], expected, rtol=1e-14)
+        assert result.state.active.tolist() == [False, False, True]
+
+    def test_two_axes_bin_every_height(self) -> None:
+        options = {"key": KEY, **RUN}
+        volume = integrate(_layer(), LAYER, accumulate=Residence(WIDE), **options)
+        surface = integrate(
+            _layer(), LAYER, accumulate=Residence(Cells(WIDE.edges[:2])), **options
+        )
+        assert_matches_oracle(
+            surface.accumulated, volume.accumulated.sum(axis=2), rtol=1e-12
+        )
+
+    def test_where(self) -> None:
+        """Only below 5 m, which is the sum of the two lowest layers."""
+
+        class Below(eqx.Module):
+            height: jax.Array
+
+            def __call__(self, state: ParticleState) -> jax.Array:
+                return state.position[:, 2] < self.height
+
+        horizontal = Cells(WIDE.edges[:2])
+        options = {"key": KEY, **RUN}
+        volume = integrate(_layer(), LAYER, accumulate=Residence(WIDE), **options)
+
+        # the condition may hold a traced height
+        @jax.jit
+        def run(height: jax.Array) -> jax.Array:
+            near = Residence(horizontal, where=Below(height))
+            return integrate(_layer(), LAYER, accumulate=near, **options).accumulated
+
+        expected = volume.accumulated[..., :2].sum(axis=2)
+        assert 0.0 < expected.sum() < 0.5 * volume.accumulated.sum()
+        assert_matches_oracle(run(jnp.asarray(5.0)), expected, rtol=1e-12)
+
+    @pytest.mark.parametrize("kind", KINDS)
+    def test_an_inactive_particle_changes_nothing(self, kind: str) -> None:
+        state = _layer()
+        gone = state.active.at[::3].set(False)
+        spoiled = eqx.tree_at(
+            lambda state: (state.position, state.active),
+            state,
+            (jnp.where(gone[:, None], state.position, jnp.nan), gone),
+        )
+
+        def total(state: ParticleState, wind: jax.Array) -> jax.Array:
+            step = Langevin(uniform(wind), LinearSigma(), Walls(0.0, 50.0))
+            near = Residence(WIDE, kind=kind)
+            options = {"key": KEY, **RUN, "duration": 60.0}
+            result = integrate(state, step, accumulate=near, **options)
+            return jnp.sum(result.accumulated**2)
+
+        wind = jnp.array([2.0, -1.0, 0.0])
+        kept = eqx.tree_at(lambda state: state.active, state, gone)
+        got = jax.value_and_grad(total, argnums=1)(spoiled, wind)
+        expected = jax.value_and_grad(total, argnums=1)(kept, wind)
+        assert jnp.isfinite(expected[0]) and expected[0] > 0.0
+        for left, right in zip(got, expected, strict=True):
+            assert_matches_oracle(left, right, rtol=1e-12)
+
+    def test_a_release_after_the_end_adds_nothing(self) -> None:
+        state = at_point(jnp.array([1.0, 1.0, 10.0]), 4, release_time=1e4)
+        result = integrate(state, LAYER, key=KEY, accumulate=Residence(WIDE), **RUN)
+        assert (result.accumulated == 0.0).all()
+
+    def test_a_backward_run(self) -> None:
+        state = at_point(jnp.array([1.0, 1.0, 10.0]), 8, release_time=1000.0)
+        options = RUN | {"t0": 1000.0, "duration": -602.0}
+        result = integrate(state, LAYER, key=KEY, accumulate=Residence(WIDE), **options)
+        assert_matches_oracle(result.accumulated.sum(), 8 * 602.0, rtol=1e-12)
+        # upwind of the release: the wind is (2, −1)
+        assert result.accumulated[:2].sum() > 0.8 * 8 * 602.0
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("kind", KINDS)
+    def test_traces(self, kind: str) -> None:
+        near = Residence(WIDE, kind=kind)
+
+        def run(noise: jax.Array, wind: jax.Array) -> Result:
+            step = Langevin(uniform(wind), LinearSigma(), Walls(0.0, 50.0))
+            options = RUN | {"duration": 30.0}
+            return integrate(_layer(16), step, noise=noise, accumulate=near, **options)
+
+        noise = jax.random.normal(KEY, (3, 6, 16, 3))
+        winds = jnp.array([[1.0, 0.0, 0.0], [2.0, -1.0, 0.0], [0.0, 3.0, 0.0]])
+        assert_traces(lambda noise, wind: run(noise, wind).accumulated, noise, winds)
+
+    def test_no_host_callback_in_a_run(self) -> None:
+        near = Residence(WIDE, kind="linear")
+        traced = jax.make_jaxpr(
+            lambda t0: (
+                integrate(
+                    _layer(8), LAYER, key=KEY, accumulate=near, **(RUN | {"t0": t0})
+                ).accumulated
+            )
+        )(0.0)
+        without = jax.make_jaxpr(
+            lambda t0: (
+                integrate(
+                    _layer(8), LAYER, key=KEY, **(RUN | {"t0": t0})
+                ).state.position
+            )
+        )(0.0)
+        assert str(traced).count("callback") == str(without).count("callback")
+
+    def test_float32(self) -> None:
+        state = _layer()
+        single = jax.tree.map(
+            lambda leaf: (
+                leaf.astype(jnp.float32) if eqx.is_inexact_array(leaf) else leaf
+            ),
+            state,
+        )
+        cells = Cells([edge.astype(jnp.float32) for edge in WIDE.edges])
+        step = Langevin(
+            uniform(jnp.array([2.0, -1.0, 0.0], jnp.float32)),
+            LinearSigma(),
+            Walls(0.0, 50.0),
+        )
+        result = integrate(single, step, key=KEY, accumulate=Residence(cells), **RUN)
+        assert result.accumulated.dtype == jnp.float32
+        expected = float((602.0 - state.release_time).sum())
+        assert_matches_oracle(result.accumulated.sum(), expected, rtol=1e-5)
+        # the total keeps the dtype of the edges
+        total = Residence(WIDE).init()
+        updated = Residence(WIDE).update(total, single, jnp.ones(64, jnp.float32))
+        assert updated.dtype == total.dtype == jnp.float64
+
+    def test_bad_arguments(self) -> None:
+        with pytest.raises(ValidationError, match="two axes"):
+            Residence(Cells(WIDE.edges[:1]))
+        with pytest.raises((ValidationError, TypeError), match="kind"):
+            Residence(WIDE, kind="cubic")  # ty: ignore
+        drifters = at_point(jnp.zeros(2), 2)
+        with pytest.raises(ValidationError, match="one column per axis of the cells"):
+            Residence(WIDE).update(Residence(WIDE).init(), drifters, jnp.ones(2))
+
+
+class TestConcentration:
+    @pytest.mark.parametrize("kind", KINDS)
+    @pytest.mark.parametrize("grid", GRIDS)
+    def test_it_holds_the_mass_inside(self, grid: str, kind: str) -> None:
+        position, mass = _particles(GRIDS[grid])
+        state = at_point(jnp.zeros(3), len(position))
+        state = eqx.tree_at(
+            lambda state: (state.position, state.mass), state, (position, mass)
+        )
+        cells = Cells(GRIDS[grid])
+        values = concentration(state, cells, t=0.0, kind=kind)
+        inside = _inside(GRIDS[grid], position)
+        held = jnp.vdot(values, cells.volumes())
+        assert_matches_oracle(held, np.asarray(mass)[inside].sum(), rtol=1e-12)
+
+    def test_only_what_is_active_and_released_by_then(self) -> None:
+        times = jnp.array([0.0, 10.0, 20.0, 30.0])
+        state = at_point(jnp.ones(2), 4, mass=4.0, release_time=times)
+        state = eqx.tree_at(lambda state: state.active, state, times != 10.0)
+        cells = Cells(([0.0, 2.0], [0.0, 4.0]))
+        held = [
+            float(concentration(state, cells, t=t)[0, 0]) for t in (-1.0, 0, 20, 99)
+        ]
+        assert held == [0.0, 1.0 / 8.0, 2.0 / 8.0, 3.0 / 8.0]
+        # what does not count may be anywhere, and may weigh anything
+        spoiled = eqx.tree_at(
+            lambda state: (state.position, state.mass),
+            state,
+            (
+                jnp.where(times[:, None] == 10.0, jnp.nan, state.position),
+                jnp.where(times == 10.0, jnp.nan, state.mass),
+            ),
+        )
+        assert float(concentration(spoiled, cells, t=99.0)[0, 0]) == 3.0 / 8.0
+
+    def test_a_continuous_source(self) -> None:
+        """In a uniform wind with no turbulence, c = Q / (u A) behind the front."""
+        rate, speed, duration, size = 0.5, 2.0, 100.0, 1000
+        state = at_point(
+            jnp.array([0.0, 0.5, 0.5]),
+            size,
+            mass=rate * duration,
+            release_time=release_times(0.0, duration, size),
+        )
+        step = Deterministic(uniform(jnp.array([speed, 0.0, 0.0])))
+        result = integrate(state, step, t0=0.0, duration=duration, step_size=10.0)
+        cells = Cells(([0.0, 20.0, 60.0, 200.0, 220.0], [0.0, 1.0], [0.0, 1.0, 3.0]))
+        values = concentration(result.state, cells, t=duration)
+        expected = rate / speed
+        assert_matches_oracle(
+            values[:, 0, 0], [expected, expected, expected, 0.0], rtol=1e-12
+        )
+
+    def test_the_steady_field_of_a_uniform_wind(self) -> None:
+        """c = Q / (u A) everywhere downwind, on cells of unequal volume."""
+        rate, speed = 0.5, 2.0
+        # half a step of 1 m before the first edge, so that the midpoint of each
+        # step's path is what is summed, and no particle ends on an edge
+        state = at_point(jnp.array([-0.5, 0.5, 0.5]), 3)
+        cells = Cells(([0.0, 20.0, 60.0, 200.0], [0.0, 1.0], [0.0, 1.0, 3.0]))
+        result = integrate(
+            state,
+            Deterministic(uniform(jnp.array([speed, 0.0, 0.0]))),
+            t0=0.0,
+            # the last steps are after the particles have left
+            duration=120.0,
+            step_size=0.5,
+            accumulate=Residence(cells, kind="nearest"),
+        )
+        steady = steady_concentration(result.accumulated, rate, 3, cells)
+        assert_matches_oracle(steady[:, 0, 0], np.full(3, rate / speed), rtol=1e-12)
+        # on unequal layers a column is the sum of c Δz
+        assert_matches_oracle(
+            column(steady, cells), steady @ np.array([1.0, 2.0]), rtol=1e-14
+        )
+
+    def test_gradients(self) -> None:
+        state = with_turbulent_velocity(
+            at_point(jnp.array([0.0, 0.0, 12.0]), 6), Homogeneous(), key=KEY
+        )
+        cells = Cells(
+            (np.array([-50.0, 0.0, 20.0, 90.0]), [-60.0, 5.0, 60.0], [0.0, 20.0, 50.0])
+        )
+
+        def steady(params: jax.Array) -> jax.Array:
+            step = Langevin(uniform(params[:3]), Homogeneous(), Walls(0.0, 50.0))
+            result = integrate(
+                state,
+                step,
+                t0=0.0,
+                duration=30.0,
+                step_size=5.0,
+                key=KEY,
+                accumulate=Residence(cells, kind="linear"),
+                adjoint=Checkpointed(every=2),
+            )
+            return steady_concentration(result.accumulated, params[3], 6, cells)
+
+        assert_grad_matches_fd(steady, jnp.array([2.0, -1.0, 0.01, 0.5]))
+
+    def test_gradients_of_a_snapshot(self) -> None:
+        cells = Cells(STRETCHED)
+        state = at_point(jnp.array([0.5, 1.0, 4.0]), 3, mass=2.0)
+
+        def snapshot(masses: jax.Array) -> jax.Array:
+            carried = eqx.tree_at(lambda state: state.mass, state, masses)
+            return concentration(carried, cells, t=0.0, kind="linear")
+
+        assert_grad_matches_fd(snapshot, state.mass)
+
+    def test_traces(self) -> None:
+        position, mass = _particles(STRETCHED, size=96)
+        state = at_point(jnp.zeros(3), 24, release_time=release_times(0.0, 10.0, 24))
+        cells = Cells(STRETCHED)
+
+        def all_three(position: jax.Array, mass: jax.Array, t: jax.Array) -> Any:
+            moved = eqx.tree_at(
+                lambda state: (state.position, state.mass), state, (position, mass)
+            )
+            values = concentration(moved, cells, t=t)
+            return (
+                values,
+                steady_concentration(values, t, 24, cells),
+                column(values, cells),
+            )
+
+        times = jnp.array([1.0, 5.0, 9.0, 20.0])
+        assert_traces(all_three, position.reshape(4, 24, 3), mass.reshape(4, 24), times)
+
+    def test_the_dtype_is_the_positions(self) -> None:
+        state = at_point(jnp.ones(3, jnp.float32), 4)
+        cells = Cells(UNIFORM)
+        values = concentration(state, cells, t=0.0)
+        assert values.dtype == jnp.float32
+        assert steady_concentration(values, 0.5, 4, cells).dtype == jnp.float32
+        assert column(values, cells).dtype == jnp.float32
+
+    def test_bad_arguments(self) -> None:
+        cells = Cells(UNIFORM)
+        values = jnp.zeros(cells.shape)
+        with pytest.raises(ValidationError, match="'residence' must have one value"):
+            steady_concentration(values[:-1], 1.0, 4, cells)
+        with pytest.raises(ValidationError, match="'n_particles' must be an integer"):
+            steady_concentration(values, 1.0, 0, cells)
+        with pytest.raises((ValidationError, TypeError), match="rate"):
+            steady_concentration(values, jnp.ones(2), 4, cells)
+        with pytest.raises(ValidationError, match="three axes"):
+            column(values, Cells(UNIFORM[:2]))
+        with pytest.raises(ValidationError, match="'values' must have one value"):
+            column(values[:-1], cells)
+        drifters = at_point(jnp.zeros(2), 2)
+        for times in (jnp.zeros(2), jnp.zeros((2, 1))):
+            with pytest.raises((ValidationError, TypeError), match="'t'"):
+                concentration(drifters, Cells(UNIFORM[:2]), t=times)
+        with pytest.raises(ValidationError, match="one column per axis of the cells"):
+            concentration(drifters, cells, t=0.0)
+        with pytest.raises(ValidationError, match="two axes"):
+            concentration(drifters, Cells(UNIFORM[:1]), t=0.0)

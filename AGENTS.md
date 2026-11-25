@@ -20,7 +20,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
 | `advect` | The deterministic solve and step, the Langevin and random-displacement steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now; the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
-| `bin` | Cells from edges, deposits, residence, concentrations | Cells and deposits now; the rest in Wave 2 ([#22](https://github.com/jejjohnson/tracerax/issues/22)) |
+| `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | Wave 2 ([#23](https://github.com/jejjohnson/tracerax/issues/23)) |
 | `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 
@@ -68,7 +68,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
 | A `where` on the result of a field read at a masked particle | `stand_in` before the read and `choose` after it (`tracerax._src.advect.masks`) |
 | A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
-| A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`) |
+| A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`); for the time spent in cells, `Residence` (`tracerax.bin`) |
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
