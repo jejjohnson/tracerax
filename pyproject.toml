@@ -27,18 +27,18 @@ dependencies = [
     # integrix fixes the same minor version.
     "diffrax>=0.7.2,<0.8",
     # Unpublished siblings resolve from git, by tag. The two move together:
-    # integrix v0.0.10 fixes functax v0.0.13, and uv reports "conflicting URLs"
+    # integrix v0.0.11 fixes functax v0.0.13, and uv reports "conflicting URLs"
     # for any other. Both are written without .git, as integrix writes them.
     "functax[jax] @ git+https://github.com/jejjohnson/functax@v0.0.13",
-    "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.10",
+    "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.11",
     # The Earth's radius and great-circle distances; it brings pipekit-array.
-    "geophysix>=0.0.7",
+    "geophysix>=0.0.9",
 ]
 
 [project.optional-dependencies]
 # Grids and masks, without gridax's own `jax` extra, which fixes functax
 # v0.0.11. gridax requires Python below 3.14.
-gridax = ["gridax>=0.3.1; python_version < '3.14'"]
+gridax = ["gridax>=0.3.3; python_version < '3.14'"]
 
 [project.urls]
 Repository = "https://github.com/jejjohnson/tracerax"
@@ -93,10 +93,10 @@ default-groups = ["dev", "test"]
 
 [tool.uv.sources]
 # Not on PyPI: these resolve from git, by tag. gridax writes geophysix and
-# pipekit in the same way, and uv reads "@v0.0.7" as another URL, so the two
-# move together: gridax v0.3.1 is on geophysix v0.0.7.
-geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.7" }
-gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.1" }
+# pipekit in the same way, and uv reads "@v0.0.9" as another URL, so the two
+# move together: gridax v0.3.3 is on geophysix v0.0.9.
+geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.9" }
+gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.3" }
 
 [build-system]
 requires = ["hatchling"]
