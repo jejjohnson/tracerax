@@ -22,7 +22,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | now |
-| `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `analysis` | Residence times and connectivity of labelled regions; FTLE, dispersion and trajectory skill | now; the last three in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 
 ### Boundaries
 
@@ -63,12 +63,13 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | A bilinear or trilinear read, `jnp.searchsorted` on a grid axis, `map_coordinates` | functax's `Linear().fit(RectilinearGrid(...), ...)` with `Policies`; for one field per position column, `fit_components` and `read_components` (`tracerax._src.velocity.gridded`) |
 | A check of a count, of the position columns, or of whether a value is traced | `check_count`, `check_dimension`, `is_concrete` (`tracerax._src._validate`) |
 | `jnp.histogram`, `segment_sum` into cells, a deposit, a cloud-in-cell weight | `deposit` on `Cells` (`tracerax.bin`), which keeps the mass at walls and on stretched cells; functax's `Binning` alone does not yet |
+| The cell each particle is in, as a flat index | `flat_index` (`tracerax._src.bin.cells`) |
 | A cell area or volume from edges | `Cells.volumes` (`tracerax.bin`), which is `functax.quad.cell_area` |
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
 | A `where` on the result of a field read at a masked particle | `stand_in` before the read and `choose` after it (`tracerax._src.advect.masks`) |
 | A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
-| A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`); for the time spent in cells, `Residence` (`tracerax.bin`) |
+| A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`); for the time spent in cells, `Residence` (`tracerax.bin`), and by each particle in labelled regions, `RegionTime` (`tracerax.analysis`) |
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
