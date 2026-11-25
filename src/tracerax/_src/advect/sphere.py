@@ -15,6 +15,7 @@ from tracerax._src._sphere import (
     angular_rate,
     check_lonlat,
     check_sphere,
+    checked_lonlat,
     normalise,
     to_lonlat,
     to_unit,
@@ -157,7 +158,8 @@ def deterministic_sphere(
     Raises:
         ValidationError: If the state is not in longitude and latitude, ``earth``
             is not a sphere, or as `deterministic` raises.
-        EquinoxRuntimeError: If a traced release time is inside a step.
+        EquinoxRuntimeError: If a traced release time is inside a step, or a traced
+            latitude is beyond a pole.
 
     Examples:
         A day along the equator at 1 m s⁻¹, across the date line:
@@ -180,7 +182,8 @@ def deterministic_sphere(
         True
     """
     check_run(duration, n_steps, t0, state.position.dtype)
-    check_lonlat(state.position, "state.position", state.active)
+    position = checked_lonlat(state.position, "state.position", state.active)
+    state = eqx.tree_at(lambda particles: particles.position, state, position)
     check_sphere(earth)
     direction = math.copysign(1.0, duration)
     dtype = state.position.dtype
@@ -317,7 +320,9 @@ class DeterministicSphere(eqx.Module):
 
         Returns:
             The moved state, with longitudes in [−180°, 180°). An inactive
-            particle, and one with duration 0, is unchanged bit for bit.
+            particle, and one with duration 0, is unchanged bit for bit. A traced
+            latitude beyond a pole gives NaN, because a check that raises would be
+            a host callback at every step of a run.
 
         Raises:
             ValidationError: If the state is not in longitude and latitude.

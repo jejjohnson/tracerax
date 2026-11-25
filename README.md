@@ -13,7 +13,7 @@
 
 Lagrangian particles in JAX: advection, dispersion, deposits, footprints and trajectory analysis.
 
-tracerax is the GeoStack's library of Lagrangian particles: it carries a set of positions forward or backward in time, and analyses such positions. It holds particle states and seeding, velocities read from a grid, and deterministic, Langevin and random-displacement steps under one loop, deposits in cells, residence times and concentrations, and surface footprints from backward runs. Trajectory analysis comes next.
+tracerax is the GeoStack's library of Lagrangian particles: it carries a set of positions forward or backward in time, and analyses such positions. It holds particle states and seeding, velocities read from a grid, and deterministic, Langevin, random-displacement and inertial steps under one loop, deposits in cells, residence times and concentrations, and surface footprints from backward runs. Trajectory analysis comes next.
 
 It is written in JAX: every function is pure, its shapes are static, and the caller calls `jax.jit` once, at the top. Particles are masked, never dropped, so a run can be differentiated.
 
@@ -37,10 +37,10 @@ The modules marked *available* are built. The order is:
 |---|---|---|
 | `particles` | the particle state, the step protocol, seeding at points, along lines and over boxes | *available* |
 | `velocity` | velocities at particles: uniform, gridded through functax, weighted sums | *available* |
-| `advect` | deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step; deterministic steps on the sphere | *available* |
+| `advect` | deterministic, Langevin, random-displacement and inertial steps, walls, and the loop that runs any step; deterministic steps on the sphere | *available* |
 | `bin` | cells from edges, deposits that conserve mass at walls, residence, concentrations | *available* |
 | `footprint` | surface footprints from backward runs | *available* |
-| `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill; inertial particles join `advect` | [Wave 3](https://github.com/jejjohnson/tracerax/issues/11) |
+| `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | [Wave 3](https://github.com/jejjohnson/tracerax/issues/11) |
 
 ## Design
 
