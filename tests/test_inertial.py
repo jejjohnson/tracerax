@@ -555,7 +555,7 @@ def test_parameters_out_of_range_are_refused(changes: dict, match: str) -> None:
     ],
 )
 def test_traced_parameters_out_of_range_are_refused(name: str, value: float) -> None:
-    @jax.jit
+    @eqx.filter_jit
     def final(parameter: jax.Array) -> jax.Array:
         step = _inertial(**{"response_time": 600.0, name: parameter})
         return integrate(

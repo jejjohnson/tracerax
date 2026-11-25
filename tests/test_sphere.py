@@ -369,8 +369,8 @@ def test_traced_latitudes_beyond_a_pole_are_not_moved_elsewhere() -> None:
 
     swapped = jnp.array([[45.0, 120.0], [45.0, 12.0]])
     with pytest.raises(RuntimeError, match="latitudes between"):
-        jax.jit(lambda position: at(position, _solve))(swapped)
-    found = jax.jit(lambda position: at(position, _loop))(swapped)
+        eqx.filter_jit(lambda position: at(position, _solve))(swapped)
+    found = eqx.filter_jit(lambda position: at(position, _loop))(swapped)
     assert np.isnan(found).all(axis=1).tolist() == [True, False]
 
 
