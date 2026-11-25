@@ -130,6 +130,18 @@ class TestWalls:
         with pytest.raises(ValidationError, match="'top' must be above"):
             Walls(bottom=5.0, top=5.0)
 
+    @pytest.mark.parametrize(
+        ("walls", "name"),
+        [
+            ((0.0, np.inf), "top"),
+            ((-np.inf, 10.0), "bottom"),
+            ((np.nan, None), "bottom"),
+        ],
+    )
+    def test_the_walls_are_finite(self, walls: tuple[Any, Any], name: str) -> None:
+        with pytest.raises(ValidationError, match=f"'{name}' must be finite"):
+            Walls(*walls)
+
 
 class TestLangevinStep:
     @pytest.mark.parametrize("name", CLOSURES)
