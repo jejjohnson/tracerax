@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 import einx
@@ -62,44 +63,42 @@ def _scaled(
     return einx.multiply("particle, particle axis -> particle axis", factor, vector)
 
 
-def _optional(value: Any) -> Any:
-    return None if value is None else as_floating(value)
+def _parameter(
+    name: str, words: str, inside: Callable[[Any], Any]
+) -> Callable[[Any], Float[Array, ""]]:
+    """The converter of a scalar field: floating, and checked to be in its range.
 
-
-def _check_parameters(
-    buoyancy: Any, response_time: Any, air_weight: Any, **others: Any
-) -> None:
-    """Raise unless the parameters are scalars, in range when concrete.
-
-    Raises:
-        ValidationError: If one is not, or is outside R ∈ (0, 1], τ > 0 or
-            α ∈ [0, 1].
+    A traced value is checked when the program runs.
     """
-    values = {
-        "buoyancy": buoyancy,
-        "response_time": response_time,
-        "air_weight": air_weight,
-        **others,
-    }
-    for name, value in values.items():
-        if value is not None and value.shape != ():
-            raise ValidationError(f"'{name}' must be a scalar, got shape {value.shape}")
-    coriolis = others.get("coriolis")
-    if (
-        coriolis is not None
-        and is_concrete(coriolis)
-        and not np.isfinite(float(coriolis))
-    ):
-        raise ValidationError(f"'coriolis' must be finite, got {float(coriolis)}")
-    ranges = {
-        "buoyancy": (lambda x: 0.0 < x <= 1.0, "in (0, 1]"),
-        "response_time": (lambda x: x > 0.0, "positive"),
-        "air_weight": (lambda x: 0.0 <= x <= 1.0, "in [0, 1]"),
-    }
-    for name, (inside, words) in ranges.items():
-        value = values[name]
-        if is_concrete(value) and not inside(float(value)):
-            raise ValidationError(f"'{name}' must be {words}, got {float(value)}")
+    message = f"'{name}' must be {words}"
+
+    def convert(value: Any) -> Float[Array, ""]:
+        array = as_floating(value)
+        if array.shape != ():
+            raise ValidationError(f"'{name}' must be a scalar, got shape {array.shape}")
+        if not is_concrete(array):
+            return eqx.error_if(array, ~inside(array), message)
+        # on the host, which a trace around a constant does not reach
+        if not bool(inside(np.asarray(array))):
+            raise ValidationError(f"{message}, got {float(array)}")
+        return array
+
+    return convert
+
+
+_buoyancy = _parameter("buoyancy", "in (0, 1]", lambda x: (x > 0.0) & (x <= 1.0))
+_response_time = _parameter("response_time", "positive", lambda x: x > 0.0)
+_finite_response_time = _parameter(
+    "response_time",
+    "positive and finite for a slow manifold",
+    lambda x: (x > 0.0) & (x < jnp.inf),
+)
+_air_weight = _parameter("air_weight", "in [0, 1]", lambda x: (x >= 0.0) & (x <= 1.0))
+_coriolis = _parameter("coriolis", "finite", lambda x: abs(x) < jnp.inf)
+
+
+def _optional_coriolis(value: Any) -> Any:
+    return None if value is None else _coriolis(value)
 
 
 class SlowManifold(eqx.Module):
@@ -131,9 +130,10 @@ class SlowManifold(eqx.Module):
             and velocities eastward and northward, or ``None`` on the plane.
 
     Raises:
-        ValidationError: If a parameter is not a scalar or is outside its range,
-            ``earth`` is not a sphere, or neither ``coriolis`` nor ``earth`` is
-            given.
+        ValidationError: If a parameter is not a scalar or a concrete one is outside
+            its range, ``earth`` is not a sphere, or neither ``coriolis`` nor
+            ``earth`` is given.
+        EquinoxRuntimeError: If a traced parameter is outside its range.
 
     References:
         Beron-Vera, F. J., Olascoaga, M. J. and Miron, P. (2019). Building a
@@ -162,20 +162,15 @@ class SlowManifold(eqx.Module):
 
     water: Velocity
     air: Velocity
-    buoyancy: Float[Array, ""] = eqx.field(converter=as_floating)
-    response_time: Float[Array, ""] = eqx.field(converter=as_floating)
-    air_weight: Float[Array, ""] = eqx.field(converter=as_floating)
-    coriolis: Float[Array, ""] | None = eqx.field(default=None, converter=_optional)
+    buoyancy: Float[Array, ""] = eqx.field(converter=_buoyancy)
+    response_time: Float[Array, ""] = eqx.field(converter=_finite_response_time)
+    air_weight: Float[Array, ""] = eqx.field(converter=_air_weight)
+    coriolis: Float[Array, ""] | None = eqx.field(
+        default=None, converter=_optional_coriolis
+    )
     earth: Ellipsoid | None = None
 
     def __check_init__(self) -> None:
-        _check_parameters(
-            self.buoyancy, self.response_time, self.air_weight, coriolis=self.coriolis
-        )
-        if is_concrete(self.response_time) and np.isinf(float(self.response_time)):
-            raise ValidationError(
-                "'response_time' must be finite for a slow manifold, got inf"
-            )
         if self.earth is not None:
             check_sphere(self.earth)
         elif self.coriolis is None:
@@ -284,7 +279,9 @@ class Inertial(eqx.Module):
         coriolis: f [s⁻¹].
 
     Raises:
-        ValidationError: If a parameter is not a scalar or is outside its range.
+        ValidationError: If a parameter is not a scalar, or a concrete one is outside
+            its range.
+        EquinoxRuntimeError: If a traced one is.
 
     References:
         Beron-Vera, F. J., Olascoaga, M. J. and Miron, P. (2019). Building a
@@ -320,15 +317,10 @@ class Inertial(eqx.Module):
 
     water: Velocity
     air: Velocity
-    buoyancy: Float[Array, ""] = eqx.field(converter=as_floating)
-    response_time: Float[Array, ""] = eqx.field(converter=as_floating)
-    air_weight: Float[Array, ""] = eqx.field(converter=as_floating)
-    coriolis: Float[Array, ""] = eqx.field(converter=as_floating)
-
-    def __check_init__(self) -> None:
-        _check_parameters(
-            self.buoyancy, self.response_time, self.air_weight, coriolis=self.coriolis
-        )
+    buoyancy: Float[Array, ""] = eqx.field(converter=_buoyancy)
+    response_time: Float[Array, ""] = eqx.field(converter=_response_time)
+    air_weight: Float[Array, ""] = eqx.field(converter=_air_weight)
+    coriolis: Float[Array, ""] = eqx.field(converter=_coriolis)
 
     @property
     def slow_manifold(self) -> SlowManifold:
