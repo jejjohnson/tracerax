@@ -20,9 +20,11 @@ from tracerax.exceptions import ValidationError
 __all__ = [
     "Cells",
     "cell_centres",
+    "cells_in",
     "check_columns",
     "edges_in",
     "host_axes",
+    "position_columns",
 ]
 
 
@@ -206,3 +208,30 @@ def edges_in(cells: Cells, dtype: Any) -> tuple[Any, ...]:
             )
         cast.append(values)
     return tuple(cast)
+
+
+def cells_in(cells: Cells, dtype: Any) -> Cells:
+    """The cells as particles of a dtype see them, with the edges in it.
+
+    Raises:
+        ValidationError: If a cell is too narrow for the dtype.
+    """
+    edges = edges_in(cells, dtype)
+    with host_axes(edges):
+        return Cells(edges)
+
+
+def position_columns(cells: Cells) -> slice:
+    """The columns of a state's positions that the axes of the cells are.
+
+    Raises:
+        ValidationError: If the cells have one axis, which a state cannot tell
+            from a height.
+    """
+    n_axes = len(cells.edges)
+    if n_axes == 1:
+        raise ValidationError(
+            "'cells' must have two axes (x, y) or three (x, y, z) to bin a state, "
+            "got 1; use 'deposit' on one column of its positions"
+        )
+    return slice(n_axes)
