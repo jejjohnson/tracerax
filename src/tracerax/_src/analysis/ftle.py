@@ -22,6 +22,7 @@ from tracerax._src._sphere import (
 )
 from tracerax._src._validate import as_floating, check_count, check_dimension
 from tracerax._src.advect.deterministic import RK4, check_run, solve
+from tracerax._src.advect.masks import stand_in
 from tracerax._src.advect.sphere import ProjectedSolver
 from tracerax._src.velocity.uniform import Velocity
 from tracerax._typing import ScalarLike
@@ -123,6 +124,12 @@ def ftle(
         check_sphere(earth)
         solver = ProjectedSolver(solver)
     n_seeds, dim = seeds.shape
+    # a seed at NaN would leave 0 × NaN in the reverse pass of every other one
+    given = einx.all("seed [axis]", jnp.isfinite(seeds))
+    origin = jnp.zeros(dim, seeds.dtype)
+    seeds = stand_in(
+        seeds, given, jnp.where(given.any(), seeds[jnp.argmax(given)], origin)
+    )
     dtype = seeds.dtype
     window = duration / n_windows
     start_time = jnp.asarray(t0, dtype=dtype)
@@ -194,4 +201,4 @@ def ftle(
     exponent = (log_scale + 0.5 * jnp.log(largest)) / abs(duration)
     # a velocity that does not depend on the position has a Jacobian anyway
     finite = einx.all("seed [coordinate]", jnp.isfinite(end))
-    return jnp.where(finite, exponent, jnp.nan)
+    return jnp.where(given & finite, exponent, jnp.nan)

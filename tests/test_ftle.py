@@ -280,6 +280,24 @@ def test_a_seed_that_is_nan_spoils_no_other() -> None:
     assert_matches_oracle(found[jnp.array([0, 2])], alone, rtol=1e-13)
 
 
+def test_a_seed_that_is_nan_spoils_no_gradient() -> None:
+    seeds = jnp.array([[0.2, 0.3], [jnp.nan, 0.3]])
+
+    def exponents(rate: jax.Array, seeds: jax.Array) -> jax.Array:
+        def velocity(t: Any, position: jax.Array) -> jax.Array:
+            return rate * jnp.sin(position) * jnp.array([1.0, -1.0])
+
+        run = {"t0": 0.0, "duration": 2.0, "n_steps": 10}
+        return ftle(seeds, velocity, adjoint=dfx.DirectAdjoint(), **run)
+
+    beside = jax.grad(lambda rate: exponents(rate, seeds)[0])(0.5)
+    alone = jax.grad(lambda rate: exponents(rate, seeds[:1])[0])(0.5)
+    assert_matches_oracle(beside, float(alone), rtol=1e-12)
+    # and with no valid seed at all
+    none = exponents(jnp.array(0.5), jnp.full((2, 2), jnp.nan))
+    assert np.isnan(none).all()
+
+
 def test_float32_needs_windows_where_the_stretch_overflows() -> None:
     """e^60 is safe, though its square overflows float32, and e^120 is not."""
 
