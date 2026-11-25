@@ -78,7 +78,9 @@ def ftle(
             Jacobian is then taken in the local east–north frames at both ends.
         adjoint: The diffrax adjoint of the solve, which must support forward
             mode. ``diffrax.DirectAdjoint()`` supports a reverse-mode gradient of
-            the exponent too.
+            the exponent too. A path that a NaN of the velocity ends spoils that
+            gradient for every seed, as in `tracerax.advect.integrate`: give such
+            a run a field that is defined where its paths go.
 
     Returns:
         Λ [s⁻¹], NaN at a seed whose path is not finite. Within √ε of a pole, with
