@@ -184,11 +184,14 @@ def ftle(
     initial = seeds if earth is None else to_unit(seeds)
     identity = jnp.broadcast_to(jnp.eye(dim, dtype=dtype), (n_seeds, dim, dim))
     begins = start_time + jnp.asarray(window * np.arange(n_windows), dtype=dtype)
-    (_, jacobian, log_scale), _ = jax.lax.scan(
+    (end, jacobian, log_scale), _ = jax.lax.scan(
         advance, (initial, identity, jnp.zeros(n_seeds, dtype)), begins
     )
     # C = ∇Φᵀ ∇Φ, up to the scale
     cauchy_green = einx.dot("seed k i, seed k j -> seed i j", jacobian, jacobian)
     largest = jnp.linalg.eigvalsh(cauchy_green)[:, -1]
     # Λ = (1/|T|) (ln s + ½ ln λ_max)
-    return (log_scale + 0.5 * jnp.log(largest)) / abs(duration)
+    exponent = (log_scale + 0.5 * jnp.log(largest)) / abs(duration)
+    # a velocity that does not depend on the position has a Jacobian anyway
+    finite = einx.all("seed [coordinate]", jnp.isfinite(end))
+    return jnp.where(finite, exponent, jnp.nan)
