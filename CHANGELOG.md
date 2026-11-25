@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.4](https://github.com/jejjohnson/tracerax/compare/v0.0.3...v0.0.4) (2026-11-25)
+
+
+### Features
+
+* **advect:** inertial particles, by the Maxey–Riley equation and its slow manifold ([#49](https://github.com/jejjohnson/tracerax/issues/49)) ([277117b](https://github.com/jejjohnson/tracerax/commit/277117b7a02580aa3004b47124c3359823630a72)), closes [#44](https://github.com/jejjohnson/tracerax/issues/44)
+* **advect:** particles on the sphere, stepped as unit vectors ([#47](https://github.com/jejjohnson/tracerax/issues/47)) ([8f114ef](https://github.com/jejjohnson/tracerax/commit/8f114eff6aad0fee6f516469520e0f1276be9a8b)), closes [#40](https://github.com/jejjohnson/tracerax/issues/40)
+* **analysis:** dispersion and the skill of a trajectory ([#52](https://github.com/jejjohnson/tracerax/issues/52)) ([0fe825c](https://github.com/jejjohnson/tracerax/commit/0fe825c389abe586dd75b80da139e41794b39432)), closes [#43](https://github.com/jejjohnson/tracerax/issues/43) [#45](https://github.com/jejjohnson/tracerax/issues/45)
+* **analysis:** finite-time Lyapunov exponents from the flow map's Jacobian ([#51](https://github.com/jejjohnson/tracerax/issues/51)) ([98822df](https://github.com/jejjohnson/tracerax/commit/98822dfdeda73ba345852dbdd23e5bd8b12dfffe)), closes [#41](https://github.com/jejjohnson/tracerax/issues/41)
+* **analysis:** residence times and connectivity between labelled regions ([#50](https://github.com/jejjohnson/tracerax/issues/50)) ([c1ab886](https://github.com/jejjohnson/tracerax/commit/c1ab886d90c965d9b8fd7a41b4bb02bcf725baec)), closes [#42](https://github.com/jejjohnson/tracerax/issues/42)
+
 ## [0.0.3](https://github.com/jejjohnson/tracerax/compare/v0.0.2...v0.0.3) (2026-11-25)
 
 
