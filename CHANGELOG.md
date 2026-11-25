@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.3](https://github.com/jejjohnson/tracerax/compare/v0.0.2...v0.0.3) (2026-11-25)
+
+
+### Features
+
+* **bin:** cells from edges, and nearest and cloud-in-cell deposits that conserve mass at walls ([#36](https://github.com/jejjohnson/tracerax/issues/36)) ([32bb3bf](https://github.com/jejjohnson/tracerax/commit/32bb3bfed2bd467ebb77a773122eaa4d75decc81))
+* **bin:** the residence accumulator, and snapshot and steady concentrations ([#38](https://github.com/jejjohnson/tracerax/issues/38)) ([da9195d](https://github.com/jejjohnson/tracerax/commit/da9195d3aef875798b77c777ec748c828ab3ad9c))
+* **footprint:** surface footprints from backward runs ([#39](https://github.com/jejjohnson/tracerax/issues/39)) ([70fbc56](https://github.com/jejjohnson/tracerax/commit/70fbc56d00852d46c76991daf165d2120f36b1b1))
+
 ## [0.0.2](https://github.com/jejjohnson/tracerax/compare/v0.0.1...v0.0.2) (2026-11-24)
 
 
