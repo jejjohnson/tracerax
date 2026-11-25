@@ -543,6 +543,32 @@ def test_parameters_out_of_range_are_refused(changes: dict, match: str) -> None:
         _inertial(**options)
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("buoyancy", 1.1),
+        ("buoyancy", 0.0),
+        ("response_time", 0.0),
+        ("response_time", -1.0),
+        ("air_weight", 1.5),
+        ("coriolis", np.nan),
+    ],
+)
+def test_traced_parameters_out_of_range_are_refused(name: str, value: float) -> None:
+    @jax.jit
+    def final(parameter: jax.Array) -> jax.Array:
+        step = _inertial(**{"response_time": 600.0, name: parameter})
+        return integrate(
+            _state(), step, t0=0.0, duration=450.0, step_size=450.0
+        ).state.position
+
+    with pytest.raises(RuntimeError, match=f"'{name}' must be"):
+        final(value)
+    # in range, the same program runs
+    inside = {"buoyancy": 0.5, "response_time": 60.0, "air_weight": 0.1}
+    assert np.isfinite(final(inside.get(name, 1e-4))).all()
+
+
 def test_a_slow_manifold_needs_a_response_time_a_sphere_and_a_rotation() -> None:
     with pytest.raises(ValidationError, match="finite"):
         _inertial(np.inf).release(_state(), t0=0.0)

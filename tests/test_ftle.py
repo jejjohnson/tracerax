@@ -272,6 +272,9 @@ def test_a_seed_that_is_nan_spoils_no_other() -> None:
     run = {"t0": 0.0, "duration": 2.0, "n_steps": 10}
     found = ftle(seeds, GYRE, **run)
     assert np.isnan(found[1])
+    # also where the velocity does not depend on the position
+    still = ftle(seeds, uniform(jnp.zeros(2)), **run)
+    assert_matches_oracle(still, np.array([0.0, np.nan, 0.0]), rtol=0.0)
     alone = ftle(seeds[jnp.array([0, 2])], GYRE, **run)
     assert_matches_oracle(found[jnp.array([0, 2])], alone, rtol=1e-13)
 
