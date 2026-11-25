@@ -276,6 +276,28 @@ class TestCgridGrids:
         # Δ = 50 m
         assert_matches_oracle(grids[0].axes[2].values[0], 500_025.0, rtol=1e-7)
 
+    def test_a_wind_is_built_inside_a_jit_on_axes_from_outside_it(self) -> None:
+        # concrete axes, though the arithmetic on them is traced
+        times, axis = jnp.array([0.0, 10.0]), jnp.arange(4.0)
+        position = jax.random.uniform(KEY, (5, 2)) * 3.0
+
+        def moved(speed: jax.Array) -> jax.Array:
+            grids = cgrid_grids(times, axis, axis)
+            fields = [speed * jnp.ones(grid.shape) for grid in grids]
+            return GriddedVelocity.fit(grids, fields)(2.0, position)
+
+        assert_matches_oracle(
+            jax.jit(moved)(jnp.array(3.0)), np.full((5, 2), 3.0), rtol=1e-14
+        )
+
+        nodes = jnp.array([0.0, 1.0, 3.0])
+
+        def stretched(speed: jax.Array) -> jax.Array:
+            return speed * cgrid_grids(times, nodes, axis)[0].axes[2].values
+
+        with pytest.raises(ValidationError, match="uniformly spaced"):
+            jax.jit(stretched)(jnp.array(1.0))
+
 
 class TestWeightedSum:
     @staticmethod
