@@ -35,7 +35,8 @@ class Walls(eqx.Module):
         top: The height of the lid [m], or ``None`` for no lid.
 
     Raises:
-        ValidationError: If ``top`` is not above ``bottom``.
+        ValidationError: If a height is not finite, or ``top`` is not above
+            ``bottom``.
 
     Examples:
         A particle that crosses both walls, and one that crosses neither:
@@ -60,6 +61,15 @@ class Walls(eqx.Module):
     top: ScalarLike | None = None
 
     def __check_init__(self) -> None:
+        for name, height in (("bottom", self.bottom), ("top", self.top)):
+            if height is None or not is_concrete(height):
+                continue
+            if not np.isfinite(np.asarray(height)):
+                # the folds of an infinite layer are 0 · ∞
+                raise ValidationError(
+                    f"'{name}' must be finite, got {height}; "
+                    "give no top, None, for no lid"
+                )
         if self.top is None or not is_concrete(self.bottom, self.top):
             return
         if not np.asarray(self.top) > np.asarray(self.bottom):
