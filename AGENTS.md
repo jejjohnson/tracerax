@@ -19,15 +19,15 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
 | `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
-| `advect` | The deterministic solve and step, the Langevin and random-displacement steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now; the sphere and inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin and random-displacement steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now; inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | now |
 | `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 
 ### Boundaries
 
-- **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax and integrix, and nothing else from the GeoStack at runtime. It never imports geotoolz, pipekit, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
-- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]` and integrix. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.10 fixes functax v0.0.13, and any other functax fails to resolve. geophysix joins in Wave 3. gridax is the `gridax` extra, imported inside the function that needs it.
+- **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix and geophysix, and nothing else from the GeoStack at runtime. It never imports geotoolz, pipekit (which geophysix brings, as `pipekit_array`), gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
+- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix and geophysix. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.10 fixes functax v0.0.13, and any other functax fails to resolve. geophysix and the `gridax` extra are uv sources by tag, which move together too: gridax v0.3.1 fixes geophysix v0.0.7. gridax is the `gridax` extra, imported inside the function that needs it.
 - **Ownership test.** Is the state a set of positions carried forward in time, or does it analyse such positions? Then it belongs here. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
 When other projects build on the package, list them here and keep their imports working through the change that moves them.
@@ -72,7 +72,8 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
-| A hand-written Earth radius or a great-circle distance | geophysix (from Wave 3) |
+| A hand-written Earth radius or a great-circle distance | `geophysix.earth` |
+| Unit vectors from longitude and latitude, east and north vectors | `tracerax._src._sphere`, on functax's |
 | `x.T`, `x.reshape(...)`, `x[:, None]`, `jnp.sum(x, axis=…)` | `einx.rearrange`, `einx.sum` and friends |
 | A new exception for a bad argument | `ValidationError` |
 
@@ -85,10 +86,10 @@ Everything composes because it keeps these contracts; the tests in "What enforce
 These are the decisions of [#14](https://github.com/jejjohnson/tracerax/issues/14), where the measurements behind them are.
 
 - **Scope.** tracerax owns a calculation whose state is a set of positions carried forward in time, or that analyses such positions. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's.
-- **Dependencies.** JAX, Equinox, einx, jaxtyping, diffrax, `functax[jax]` and integrix are required; geophysix joins in Wave 3; gridax is the `gridax` extra. No other stack library is imported: gaussx arrives through integrix and is never imported directly.
+- **Dependencies.** JAX, Equinox, einx, jaxtyping, diffrax, `functax[jax]`, integrix and geophysix are required; gridax is the `gridax` extra. No other stack library is imported: gaussx arrives through integrix and is never imported directly.
 - **JAX only.** Pure functions and Equinox modules. Nothing inside the library calls `jax.jit`; the caller jits once, at the top.
 - **Shapes are static.** Particles are masked, never dropped, and a masked particle keeps finite values.
-- **Units.** SI: metres, seconds, m s⁻¹, kg. Positions are metres in a local frame the caller chooses, because float32 cannot resolve a 1 cm step 10⁶ m from the origin.
+- **Units.** SI: metres, seconds, m s⁻¹, kg. Positions are metres in a local frame the caller chooses, because float32 cannot resolve a 1 cm step 10⁶ m from the origin. On the sphere they are (longitude, latitude) in degrees, and velocities stay in m s⁻¹.
 - **Axis order.** Position columns are (x, y) or (x, y, z), and cells follow the same order. A gridded velocity keeps its fields as (time, z, y, x) or (time, y, x).
 - **Velocity.** A callable `velocity(t, position)`, the argument order of diffrax and `integrix.march`, returning one velocity per particle. `t` is a scalar or one time per particle.
 - **Steps.** What moves a state is a `ParticleStep` ([#16](https://github.com/jejjohnson/tracerax/issues/16)): deterministic, Langevin, random displacement or, from Wave 3, inertial. One loop ([#20](https://github.com/jejjohnson/tracerax/issues/20)) runs any of them.

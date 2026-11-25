@@ -12,7 +12,7 @@ Each is created by its first feature issue, so the later ones may not be here ye
 |---|---|
 | `tracerax.particles` | the particle state, the step protocol, seeding |
 | `tracerax.velocity` | velocities at particles, uniform, gridded or summed |
-| `tracerax.advect` | deterministic, Langevin and random-displacement steps, the loop |
+| `tracerax.advect` | steps on the plane and on the sphere, the loop |
 | `tracerax.bin` | cells, deposits, residence, concentrations |
 | `tracerax.footprint` | surface footprints from backward runs |
 | `tracerax.analysis` | trajectory diagnostics, on the plane and on the sphere |

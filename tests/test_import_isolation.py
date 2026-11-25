@@ -13,9 +13,17 @@ import sys
 import pytest
 
 
-#: The stack libraries tracerax may load (AGENTS.md, "Boundaries"): functax and
-#: integrix, and gaussx, which is integrix's and is never imported directly.
-ALLOWED = {"functax", "gaussx", "integrix"}
+#: The stack libraries tracerax may load (AGENTS.md, "Boundaries"): functax,
+#: integrix and geophysix, and what they bring, which is never imported directly:
+#: gaussx is integrix's, and the two pipekit packages are geophysix's.
+ALLOWED = {
+    "functax",
+    "gaussx",
+    "geophysix",
+    "integrix",
+    "pipekit_array",
+    "pipekit_ops",
+}
 
 #: Every import package of the stack, so that a new one is noticed by name.
 STACK = ALLOWED | {
@@ -27,16 +35,13 @@ STACK = ALLOWED | {
     "geonnax",
     "geoops",
     "geopatcher",
-    "geophysix",
     "geoproducts",
     "geotoolz",
     "gridax",
     "kernellib",
     "pipekit",
-    "pipekit_array",
     "pipekit_cycle",
     "pipekit_jax",
-    "pipekit_ops",
     "plumax",
     "pyrox",
     "radiomax",
@@ -79,11 +84,13 @@ def test_importing_the_package_loads_only_the_allowed_stack_libraries() -> None:
 
 
 def test_the_required_stack_libraries_load_only_the_allowed_ones() -> None:
-    """What functax and integrix bring is allowed too, so a pin move is noticed."""
-    loaded = _loaded_by_importing_everything("import functax, integrix.march\n")
+    """What the three bring is allowed too, so a pin move is noticed."""
+    loaded = _loaded_by_importing_everything(
+        "import functax, integrix.march, geophysix.earth\n"
+    )
     assert loaded & STACK <= ALLOWED
     # the check sees a stack library when one is loaded
-    assert {"functax", "integrix"} <= loaded
+    assert {"functax", "geophysix", "integrix"} <= loaded
 
 
 @pytest.mark.gridax

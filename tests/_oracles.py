@@ -22,6 +22,7 @@ __all__ = [
     "CosineDiffusivity",
     "DoubleGyre",
     "SolidBodyRotation",
+    "SphereRotation",
     "plumax_values",
     "taylor_variance",
     "uniform_wind_position",
@@ -85,6 +86,63 @@ class SolidBodyRotation:
         x, y = position[..., 0], position[..., 1]
         rotated = position.at[..., 0].set(cosine * x - sine * y)
         return rotated.at[..., 1].set(sine * x + cosine * y)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SphereRotation:
+    """Rotation of the sphere at ω about an axis in the plane of longitude 0°.
+
+    With n the axis and r the unit vector of a position, the velocity is
+    ω R n × r, given eastward and northward, and the path is a circle about n.
+
+    Args:
+        rate: ω [rad s⁻¹].
+        tilt: The angle from the north pole to n [rad].
+        radius: R [m].
+    """
+
+    rate: Any
+    tilt: float
+    radius: float = 6_371_008.771415059
+
+    @property
+    def axis(self) -> jax.Array:
+        """n."""
+        return jnp.array([np.sin(self.tilt), 0.0, np.cos(self.tilt)])
+
+    def __call__(self, t: Any, lonlat: jax.Array) -> jax.Array:
+        longitude, latitude = jnp.deg2rad(lonlat[..., 0]), jnp.deg2rad(lonlat[..., 1])
+        sin_lon, cos_lon = jnp.sin(longitude), jnp.cos(longitude)
+        sin_lat, cos_lat = jnp.sin(latitude), jnp.cos(latitude)
+        n_x, n_z = np.sin(self.tilt), np.cos(self.tilt)
+        # (n × r) · ê_λ and (n × r) · ê_φ
+        east = n_z * cos_lat - n_x * sin_lat * cos_lon
+        north = n_x * sin_lon
+        scale = self.rate * self.radius
+        return (scale * jnp.stack([east, north], axis=-1)).astype(lonlat.dtype)
+
+    def exact(self, lonlat: jax.Array, duration: Any) -> jax.Array:
+        """The positions after a duration, by Rodrigues' formula."""
+        longitude, latitude = jnp.deg2rad(lonlat[..., 0]), jnp.deg2rad(lonlat[..., 1])
+        r = jnp.stack(
+            [
+                jnp.cos(latitude) * jnp.cos(longitude),
+                jnp.cos(latitude) * jnp.sin(longitude),
+                jnp.sin(latitude),
+            ],
+            axis=-1,
+        )
+        angle = self.rate * duration
+        along = jnp.sum(r * self.axis, axis=-1, keepdims=True)
+        # r cos θ + (n × r) sin θ + n (n · r)(1 − cos θ)
+        turned = (
+            r * jnp.cos(angle)
+            + jnp.cross(jnp.broadcast_to(self.axis, r.shape), r) * jnp.sin(angle)
+            + self.axis * along * (1.0 - jnp.cos(angle))
+        )
+        longitude = jnp.arctan2(turned[..., 1], turned[..., 0])
+        latitude = jnp.arcsin(jnp.clip(turned[..., 2], -1.0, 1.0))
+        return jnp.rad2deg(jnp.stack([longitude, latitude], axis=-1))
 
 
 def uniform_wind_position(

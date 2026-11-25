@@ -22,7 +22,7 @@ The diff (`git diff <base>...HEAD`, default base `main`) or the files / commit r
    - an RK stage, a Butcher tableau, a checkpointed or truncated scan → integrix or diffrax;
    - a second particle loop, or a step with its own release or mask logic → a `ParticleStep` run by the one loop;
    - a turbulence closure, a mixing length, a plume or a source inversion → plumax, passed in as an argument;
-   - a hand-written Earth radius or great-circle distance → geophysix (from Wave 3);
+   - a hand-written Earth radius or great-circle distance → `geophysix.earth`;
    - an alias that only combines functions the stack has → delete it and show the combination in the docs;
    - a new exception class for a bad argument → `ValidationError`;
    - a public name that duplicates another public name for a different object (`tests/test_capabilities.py` will fail on it).

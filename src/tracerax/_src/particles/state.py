@@ -20,7 +20,8 @@ class ParticleState(eqx.Module):
     not stored.
 
     Attributes:
-        position: x, with columns (x, y) or (x, y, z) [m], in a local frame.
+        position: x, with columns (x, y) or (x, y, z) [m], in a local frame, or
+            (longitude, latitude) in degrees for a step on the sphere.
         velocity: The step's memory [m s⁻¹]: the turbulent fluctuation u' for a
             Langevin step, the particle's own velocity for an inertial one, and
             zeros for the steps that have none.

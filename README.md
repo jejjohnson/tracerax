@@ -17,11 +17,11 @@ tracerax is the GeoStack's library of Lagrangian particles: it carries a set of 
 
 It is written in JAX: every function is pure, its shapes are static, and the caller calls `jax.jit` once, at the top. Particles are masked, never dropped, so a run can be differentiated.
 
-tracerax writes no interpolation, binning or time stepper of its own. [functax](https://github.com/jejjohnson/functax) reads the velocity and bins the particles, and [integrix](https://github.com/jejjohnson/integrix) gives the solvers and the adjoints. Turbulence closures, plume physics and source inversions are [plumax](https://github.com/jejjohnson/plumax)'s.
+tracerax writes no interpolation, binning or time stepper of its own. [functax](https://github.com/jejjohnson/functax) reads the velocity and bins the particles, and [integrix](https://github.com/jejjohnson/integrix) gives the solvers and the adjoints, and [geophysix](https://github.com/jejjohnson/geophysix) the sphere. Turbulence closures, plume physics and source inversions are [plumax](https://github.com/jejjohnson/plumax)'s.
 
 ## Install
 
-tracerax is not on PyPI yet, and neither are functax and integrix, so it installs from a clone:
+tracerax is not on PyPI yet, and neither are functax, integrix and geophysix, so it installs from a clone:
 
 ```bash
 git clone https://github.com/jejjohnson/tracerax.git
@@ -37,10 +37,10 @@ The modules marked *available* are built. The order is:
 |---|---|---|
 | `particles` | the particle state, the step protocol, seeding at points, along lines and over boxes | *available* |
 | `velocity` | velocities at particles: uniform, gridded through functax, weighted sums | *available* |
-| `advect` | deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step | *available* |
+| `advect` | deterministic, Langevin and random-displacement steps, walls, and the loop that runs any step; deterministic steps on the sphere | *available* |
 | `bin` | cells from edges, deposits that conserve mass at walls, residence, concentrations | *available* |
 | `footprint` | surface footprints from backward runs | *available* |
-| `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill; the sphere and inertial particles join `advect` | [Wave 3](https://github.com/jejjohnson/tracerax/issues/11) |
+| `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill; inertial particles join `advect` | [Wave 3](https://github.com/jejjohnson/tracerax/issues/11) |
 
 ## Design
 

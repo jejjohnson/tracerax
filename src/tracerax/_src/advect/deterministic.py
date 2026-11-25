@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any, cast
 
 import diffrax as dfx
@@ -15,6 +16,7 @@ from jaxtyping import Array, Float
 
 from tracerax._src._validate import check_count, is_concrete
 from tracerax._src.advect.domain import Box
+from tracerax._src.advect.loop import check_epoch
 from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.uniform import Velocity
@@ -23,15 +25,24 @@ from tracerax.exceptions import ValidationError
 
 
 __all__ = [
+    "CHECKPOINT",
     "Deterministic",
+    "PerParticleTerm",
+    "RK4",
+    "ReleasedTime",
+    "check_explicit",
+    "check_releases",
+    "check_run",
     "deterministic",
+    "runge_kutta",
+    "solve",
 ]
 
-_RK4 = integrix.march.RK4Classic()
-_CHECKPOINT = dfx.RecursiveCheckpointAdjoint()
+RK4 = integrix.march.RK4Classic()
+CHECKPOINT = dfx.RecursiveCheckpointAdjoint()
 
 
-class _ReleasedTime(eqx.Module):
+class ReleasedTime(eqx.Module):
     """C_p(s) = d max(d s − r_p, 0): how long particle p has been released for.
 
     As the control of a diffrax term it gives each particle its own step length,
@@ -58,11 +69,11 @@ class _ReleasedTime(eqx.Module):
         return jnp.sign(t1 - t0) * elapsed
 
 
-class _PerParticleTerm(dfx.AbstractTerm):
+class PerParticleTerm(dfx.AbstractTerm):
     """dx_p = u_p dC_p: an ODE term whose step length is one per particle."""
 
     vector_field: Any
-    control: _ReleasedTime
+    control: ReleasedTime
 
     def vf(self, t: Any, y: Any, args: Any) -> Any:
         return self.vector_field(t, y, args)
@@ -75,8 +86,14 @@ class _PerParticleTerm(dfx.AbstractTerm):
         return einx.multiply("particle axis, particle -> particle axis", vf, control)
 
 
-def _check_run(duration: float, n_steps: int, t0: ScalarLike) -> None:
-    """Raise unless the duration is finite and not zero, and there is a step."""
+def check_run(duration: float, n_steps: int, t0: ScalarLike, dtype: Any) -> None:
+    """Raise unless the run is one: a duration, a step, and a time that fits them.
+
+    Raises:
+        ValidationError: If the duration is not finite or is 0, there is no step,
+            ``t0`` is not a scalar, or a concrete one is too far from its epoch
+            for the dtype.
+    """
     check_count(n_steps, "n_steps")
     if not is_concrete(duration) or not math.isfinite(duration) or duration == 0.0:
         raise ValidationError(
@@ -84,6 +101,7 @@ def _check_run(duration: float, n_steps: int, t0: ScalarLike) -> None:
         )
     if jnp.shape(t0) != ():
         raise ValidationError(f"'t0' must be a scalar, got shape {jnp.shape(t0)}")
+    check_epoch(t0, "t0", abs(duration) / n_steps, dtype)
 
 
 _RELEASE_MESSAGE = (
@@ -92,7 +110,7 @@ _RELEASE_MESSAGE = (
 )
 
 
-def _check_releases(
+def check_releases(
     release_time: Float[Array, " particle"],
     start_time: Float[Array, ""],
     direction: float,
@@ -158,6 +176,116 @@ def _check_tableau(solver: dfx.AbstractSolver) -> None:
         )
 
 
+def solve(
+    term: dfx.AbstractTerm,
+    initial: Float[Array, "particle axis"],
+    *,
+    duration: float,
+    n_steps: int,
+    solver: dfx.AbstractSolver,
+    save_at: Float[Array, " save"] | None,
+    adjoint: dfx.AbstractAdjoint,
+) -> tuple[Float[Array, "particle axis"], Float[Array, "save particle axis"] | None]:
+    """Solve over the offsets 0 to ``duration`` in equal steps.
+
+    Returns:
+        The solution at the end, and at ``save_at`` or ``None``.
+
+    Raises:
+        ValidationError: If a concrete save offset is outside the run.
+    """
+    dtype = initial.dtype
+    offsets = jnp.asarray(np.linspace(0.0, duration, n_steps + 1), dtype=dtype)
+    if save_at is None:
+        saveat = dfx.SaveAt(t1=True)
+    else:
+        _check_saves(save_at, duration)
+        saveat = dfx.SaveAt(ts=jnp.asarray(save_at, dtype=dtype), t1=True)
+    solution = dfx.diffeqsolve(
+        term,
+        solver,
+        offsets[0],
+        offsets[-1],
+        None,
+        initial,
+        stepsize_controller=dfx.StepTo(offsets),
+        saveat=saveat,
+        adjoint=adjoint,
+        max_steps=n_steps,
+    )
+    states = cast(Any, solution.ys)
+    return states[-1], None if save_at is None else states[:-1]
+
+
+def check_explicit(solver: Any) -> None:
+    """Raise unless the solver is explicit Runge–Kutta, with a tableau to read.
+
+    Raises:
+        ValidationError: If it is not.
+    """
+    if not isinstance(solver, dfx.AbstractERK):
+        raise ValidationError(
+            "'solver' must be explicit Runge–Kutta (diffrax.AbstractERK), got "
+            f"{type(solver).__name__}"
+        )
+
+
+def runge_kutta(
+    solver: dfx.AbstractERK,
+    rate: Callable[
+        [Float[Array, " particle"], Float[Array, "particle axis"]],
+        Float[Array, "particle axis"],
+    ],
+    initial: Float[Array, "particle axis"],
+    start: Float[Array, " particle"],
+    duration: Float[Array, " particle"],
+    direction: float,
+) -> Float[Array, "particle axis"]:
+    """One step of an explicit Runge–Kutta solver, with a length per particle.
+
+    k_i = f(t + d c_i δ, y + d δ ∑_{j<i} a_ij k_j),  y ← y + d δ ∑_i b_i k_i
+
+    The stages are unrolled from the tableau, with δ one per particle, so forward
+    and reverse mode both work and a release inside a step is exact.
+
+    Args:
+        solver: The solver whose tableau is read.
+        rate: f(t, y), with one time per particle.
+        initial: y.
+        start: t, one per particle [s].
+        duration: δ ≥ 0, one per particle [s].
+        direction: d = +1 forward in time, −1 backward.
+
+    Returns:
+        y after the step.
+    """
+    # every explicit Runge–Kutta solver has one
+    tableau = cast(dfx.ButcherTableau, solver.tableau)
+    times = [float(tableau.c1), *(float(c) for c in tableau.c)]
+
+    def combine(
+        weights: Any, stages: list[Float[Array, "particle axis"]]
+    ) -> Float[Array, "particle axis"]:
+        # y + d δ ∑_j w_j k_j
+        total = jnp.zeros_like(initial)
+        for weight, stage in zip(weights, stages, strict=True):
+            if float(weight) != 0.0:
+                total = total + float(weight) * stage
+        offset = einx.multiply(
+            "particle axis, particle -> particle axis", total, direction * duration
+        )
+        return initial + offset
+
+    stages: list[Float[Array, "particle axis"]] = []
+    for index, fraction in enumerate(times):
+        before = [] if index == 0 else tableau.a_lower[index - 1]
+        # k_i = f(t + d c_i δ, y + d δ ∑_{j<i} a_ij k_j)
+        stage = rate(start + direction * fraction * duration, combine(before, stages))
+        stages.append(stage.astype(initial.dtype))
+    # y ← y + d δ ∑_i b_i k_i
+    return combine(tableau.b_sol, stages)
+
+
 def deterministic(
     state: ParticleState,
     velocity: Velocity,
@@ -165,10 +293,10 @@ def deterministic(
     t0: ScalarLike,
     duration: float,
     n_steps: int,
-    solver: dfx.AbstractSolver = _RK4,
+    solver: dfx.AbstractSolver = RK4,
     save_at: Float[Array, " save"] | None = None,
     domain: Box | None = None,
-    adjoint: dfx.AbstractAdjoint = _CHECKPOINT,
+    adjoint: dfx.AbstractAdjoint = CHECKPOINT,
 ) -> tuple[ParticleState, Float[Array, "save particle axis"] | None]:
     """Carry particles along a velocity, forward or backward in time.
 
@@ -207,6 +335,7 @@ def deterministic(
 
     Raises:
         ValidationError: If ``duration`` is 0, ``n_steps`` is below 1, a concrete
+            ``t0`` is too far from its epoch for the positions' dtype, a concrete
             release time is inside a step, a concrete save offset is outside the
             run, or the solver's first stage has no weight and there is a domain.
         EquinoxRuntimeError: If a traced release time is inside a step.
@@ -242,11 +371,11 @@ def deterministic(
         >>> bool(jnp.allclose(back.position, 0.0, atol=1e-5))
         True
     """
-    _check_run(duration, n_steps, t0)
+    check_run(duration, n_steps, t0, state.position.dtype)
     direction = math.copysign(1.0, duration)
     dtype = state.position.dtype
     start_time = jnp.asarray(t0, dtype=dtype)
-    release_time = _check_releases(
+    release_time = check_releases(
         state.release_time.astype(dtype),
         start_time,
         direction,
@@ -274,32 +403,20 @@ def deterministic(
 
     # r_p = d (t_{r,p} − t₀)
     release = direction * (release_time - start_time)
-    term = _PerParticleTerm(vector_field, _ReleasedTime(release, direction))
-    offsets = jnp.asarray(np.linspace(0.0, duration, n_steps + 1), dtype=dtype)
-    if save_at is None:
-        saveat = dfx.SaveAt(t1=True)
-    else:
-        _check_saves(save_at, duration)
-        saveat = dfx.SaveAt(ts=jnp.asarray(save_at, dtype=dtype), t1=True)
-    solution = dfx.diffeqsolve(
-        term,
-        solver,
-        offsets[0],
-        offsets[-1],
-        None,
+    final, saved = solve(
+        PerParticleTerm(vector_field, ReleasedTime(release, direction)),
         state.position,
-        stepsize_controller=dfx.StepTo(offsets),
-        saveat=saveat,
+        duration=duration,
+        n_steps=n_steps,
+        solver=solver,
+        save_at=save_at,
         adjoint=adjoint,
-        max_steps=n_steps,
     )
-    positions = solution.ys
-    final = positions[-1]
     active = state.active if domain is None else state.active & domain.contains(final)
     moved = eqx.tree_at(
         lambda particles: (particles.position, particles.active), state, (final, active)
     )
-    return moved, None if save_at is None else positions[:-1]
+    return moved, saved
 
 
 class Deterministic(eqx.Module):
@@ -334,14 +451,10 @@ class Deterministic(eqx.Module):
     """
 
     velocity: Velocity
-    solver: dfx.AbstractERK = _RK4
+    solver: dfx.AbstractERK = RK4
 
     def __check_init__(self) -> None:
-        if not isinstance(self.solver, dfx.AbstractERK):
-            raise ValidationError(
-                "'solver' must be explicit Runge–Kutta (diffrax.AbstractERK), got "
-                f"{type(self.solver).__name__}"
-            )
+        check_explicit(self.solver)
 
     def noise_shape(self, state: ParticleState) -> None:
         """No noise: the step is deterministic."""
@@ -370,35 +483,10 @@ class Deterministic(eqx.Module):
             unchanged bit for bit.
         """
         del noise
-        # __check_init__ refuses any other solver
-        tableau = cast(dfx.ButcherTableau, self.solver.tableau)
         moves = state.active & (duration > 0.0)
         position = stand_in(state.position, moves)
-        dtype = position.dtype
-        times = [float(tableau.c1), *(float(c) for c in tableau.c)]
-
-        def combine(
-            weights: Any, stages: list[Float[Array, "particle axis"]]
-        ) -> Float[Array, "particle axis"]:
-            # x + d δ ∑_j w_j k_j
-            total = jnp.zeros_like(position)
-            for weight, stage in zip(weights, stages, strict=True):
-                if float(weight) != 0.0:
-                    total = total + float(weight) * stage
-            offset = einx.multiply(
-                "particle axis, particle -> particle axis", total, direction * duration
-            )
-            return position + offset
-
-        stages: list[Float[Array, "particle axis"]] = []
-        for index, fraction in enumerate(times):
-            before = [] if index == 0 else tableau.a_lower[index - 1]
-            # k_i = u(t + d c_i δ, x + d δ ∑_{j<i} a_ij k_j)
-            rate = self.velocity(
-                start + direction * fraction * duration, combine(before, stages)
-            )
-            stages.append(rate.astype(dtype))
-        # x ← x + d δ ∑_i b_i k_i
-        moved = combine(tableau.b_sol, stages)
+        moved = runge_kutta(
+            self.solver, self.velocity, position, start, duration, direction
+        )
         position = choose(moves, moved, state.position)
         return eqx.tree_at(lambda particles: particles.position, state, position)
