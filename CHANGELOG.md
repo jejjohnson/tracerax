@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.5](https://github.com/jejjohnson/tracerax/compare/v0.0.4...v0.0.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** geophysix v0.0.9, integrix v0.0.11 and gridax v0.3.3 ([#54](https://github.com/jejjohnson/tracerax/issues/54)) ([ba5d483](https://github.com/jejjohnson/tracerax/commit/ba5d483332431ec640e4c6906a011109dbeefafa))
+
 ## [0.0.4](https://github.com/jejjohnson/tracerax/compare/v0.0.3...v0.0.4) (2026-11-25)
 
 
