@@ -22,7 +22,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | now |
-| `analysis` | Residence times and connectivity of labelled regions, FTLE; dispersion and trajectory skill | now; the last two in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `analysis` | Residence times and connectivity of labelled regions, FTLE, dispersion, trajectory skill | now |
 
 ### Boundaries
 
@@ -73,7 +73,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
-| A hand-written Earth radius or a great-circle distance | `geophysix.earth` |
+| A hand-written Earth radius or a great-circle distance | `geophysix.earth`; for two arrays of positions, plane or sphere, `distance_between` and `squared_distance` (`tracerax._src.analysis.distance`) |
 | A material derivative, a vorticity, the gradient of a velocity at particles | `velocity_derivatives` (`tracerax._src.velocity.derivatives`) |
 | Unit vectors from longitude and latitude, east and north vectors | `tracerax._src._sphere`, on functax's |
 | `x.T`, `x.reshape(...)`, `x[:, None]`, `jnp.sum(x, axis=…)` | `einx.rearrange`, `einx.sum` and friends |
