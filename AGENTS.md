@@ -22,7 +22,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | now |
-| `analysis` | Residence times and connectivity of labelled regions; FTLE, dispersion and trajectory skill | now; the last three in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `analysis` | Residence times and connectivity of labelled regions, FTLE; dispersion and trajectory skill | now; the last two in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
 
 ### Boundaries
 

@@ -42,4 +42,27 @@ exchange = connectivity(state.position, result.state.position, regions)
 - **Gradients.** All of these are piecewise constant in the positions, so their gradient is zero.
 - **On the sphere** the cells are in degrees and the longitudes of a run are in [−180°, 180°), so give the edges in that range. Cells are half open, so a particle released at 180° is in none (release it at −180°), and one at the north pole is in the last cell only when its edge is above 90°.
 
+## Lyapunov exponents
+
+`ftle` is the rate at which two neighbours separate, from the Jacobian of the flow map. The Jacobian is exact: each solve carries one tangent per position column, so there are no neighbours to place and no spacing to tune.
+
+```python
+from tracerax.analysis import ftle
+
+
+def strain(t, position):
+    return 1e-5 * position * jnp.array([1.0, -1.0])
+
+
+x, y = jnp.meshgrid(jnp.linspace(0.0, 1e4, 20), jnp.linspace(0.0, 1e4, 20))
+seeds = jnp.column_stack([x.ravel(), y.ravel()])
+exponent = ftle(seeds, strain, t0=0.0, duration=86_400.0, n_steps=96)
+```
+
+- **A gridded velocity** has the gradient of its scheme. In a double gyre on an 81 × 41 grid at 61 times the median error is 9e-4 s⁻¹ with a linear read and 2e-4 s⁻¹ with a cubic one, against exponents of 0.009 to 0.463 s⁻¹; the largest is 0.06 and 0.11 s⁻¹, on the ridges.
+- **Forward** in time the ridges repel, and **backward** they attract.
+- **On the sphere** (`earth=geophysix.earth.SPHERE`) seeds are longitudes and latitudes in degrees, and the Jacobian is taken in the local east–north frames at both ends. A seed may be at a pole: the velocity is then read 0.1 m from it in float64, and 2 km in float32.
+- **Long runs.** The stretch $e^{\Lambda T}$ overflows when ΛT is large, in float32 from 88 on; `n_windows` splits the run and rescales.
+- **Gradients.** The default solves in forward mode only. `adjoint=diffrax.DirectAdjoint()` supports `jax.grad` of the exponent.
+
 ::: tracerax.analysis
