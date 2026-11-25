@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 from functax.geometry import Axis, RectilinearGrid
 from functax.quad import cell_area
-from jaxtyping import Array, Bool, Float
+from jaxtyping import Array, Bool, Float, Int
 
 from tracerax._src._validate import is_concrete
 from tracerax.exceptions import ValidationError
@@ -23,6 +23,7 @@ __all__ = [
     "cells_in",
     "check_columns",
     "edges_in",
+    "flat_index",
     "host_axes",
     "position_columns",
 ]
@@ -219,6 +220,21 @@ def cells_in(cells: Cells, dtype: Any) -> Cells:
     edges = edges_in(cells, dtype)
     with host_axes(edges):
         return Cells(edges)
+
+
+def flat_index(
+    edges: tuple[Any, ...], position: Float[Array, "particle axis"]
+) -> Int[Array, " particle"]:
+    """The row-major index of the cell of each particle inside the edges.
+
+    i = max{j : e_j ≤ x} on each axis. It means nothing for a particle outside.
+    """
+    flat = jnp.zeros(position.shape[0], dtype=int)
+    for index, edge in enumerate(edges):
+        # i = max{j : e_j ≤ x}
+        cell = jnp.searchsorted(edge, position[:, index], side="right") - 1
+        flat = flat * (edge.shape[0] - 1) + cell
+    return flat
 
 
 def position_columns(cells: Cells) -> slice:

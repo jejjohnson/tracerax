@@ -17,6 +17,7 @@ from tracerax._src.bin.cells import (
     cell_centres,
     check_columns,
     edges_in,
+    flat_index,
     host_axes,
 )
 from tracerax.exceptions import ValidationError
@@ -129,12 +130,7 @@ def _nearest(
     latter ignores the edges of an axis.
     """
     shape = tuple(edge.shape[0] - 1 for edge in edges)
-    flat = jnp.zeros(position.shape[0], dtype=int)
-    for index, (edge, size) in enumerate(zip(edges, shape, strict=True)):
-        # i = max{j : e_j ≤ x}
-        cell = jnp.searchsorted(edge, position[:, index], side="right") - 1
-        # the flat index, row-major
-        flat = flat * size + cell
+    flat = flat_index(edges, position)
     n_cells = int(np.prod(shape))
     taps = einx.id("particle -> particle 1", flat)
     # H has one tap of weight 1 per particle
