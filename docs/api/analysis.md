@@ -63,6 +63,6 @@ exponent = ftle(seeds, strain, t0=0.0, duration=86_400.0, n_steps=96)
 - **Forward** in time the ridges repel, and **backward** they attract.
 - **On the sphere** (`earth=geophysix.earth.SPHERE`) seeds are longitudes and latitudes in degrees, and the Jacobian is taken in the local east–north frames at both ends. A seed may be at a pole: the velocity is then read 0.1 m from it in float64, and 2 km in float32.
 - **Long runs.** The stretch $e^{\Lambda T}$ overflows when ΛT is large, in float32 from 88 on; `n_windows` splits the run and rescales.
-- **Gradients.** The default solves in forward mode only. `adjoint=diffrax.DirectAdjoint()` supports `jax.grad` of the exponent.
+- **Gradients.** The default solves in forward mode only. `adjoint=diffrax.DirectAdjoint()` supports `jax.grad` of the exponent. A seed at NaN spoils no other seed's gradient, but a path that leaves the data and reads a NaN does: clamp the field at its edge, which is `GriddedVelocity`'s default.
 
 ::: tracerax.analysis
