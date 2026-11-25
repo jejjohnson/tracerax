@@ -6,16 +6,24 @@ from typing import Any
 
 import jax
 import jax.core
+import jax.numpy as jnp
 import numpy as np
 
 from tracerax.exceptions import ValidationError
 
 
 __all__ = [
+    "as_floating",
     "check_dimension",
     "check_count",
     "is_concrete",
 ]
+
+
+def as_floating(value: Any) -> jax.Array:
+    """The value as a floating array: integers become JAX's default float."""
+    array = jnp.asarray(value)
+    return array.astype(jnp.result_type(array, float))
 
 
 def is_concrete(*values: Any) -> bool:

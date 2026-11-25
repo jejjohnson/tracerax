@@ -358,6 +358,22 @@ def test_positions_that_are_not_longitude_and_latitude_are_refused(
         )
 
 
+def test_traced_latitudes_beyond_a_pole_are_not_moved_elsewhere() -> None:
+    """The solve raises; the loop, which has no callback per step, gives NaN."""
+    east = uniform(jnp.ones(2))
+    run = {"t0": 0.0, "duration": 60.0, "n_steps": 2}
+
+    def at(position: jax.Array, move: Callable) -> jax.Array:
+        state = eqx.tree_at(lambda s: s.position, _state([[0.0, 0.0]] * 2), position)
+        return move(state, east, **run).position
+
+    swapped = jnp.array([[45.0, 120.0], [45.0, 12.0]])
+    with pytest.raises(RuntimeError, match="latitudes between"):
+        jax.jit(lambda position: at(position, _solve))(swapped)
+    found = jax.jit(lambda position: at(position, _loop))(swapped)
+    assert np.isnan(found).all(axis=1).tolist() == [True, False]
+
+
 def test_an_ellipsoid_is_refused() -> None:
     velocity = uniform(jnp.ones(2))
     with pytest.raises(ValidationError, match="must be a sphere"):

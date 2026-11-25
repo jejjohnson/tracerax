@@ -19,7 +19,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
 | `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
-| `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin and random-displacement steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now; inertial particles in Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
+| `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | now |
 | `analysis` | FTLE, residence times, connectivity, dispersion, trajectory skill | Wave 3 ([#11](https://github.com/jejjohnson/tracerax/issues/11)) |
@@ -73,6 +73,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
 | A hand-written Earth radius or a great-circle distance | `geophysix.earth` |
+| A material derivative, a vorticity, the gradient of a velocity at particles | `velocity_derivatives` (`tracerax._src.velocity.derivatives`) |
 | Unit vectors from longitude and latitude, east and north vectors | `tracerax._src._sphere`, on functax's |
 | `x.T`, `x.reshape(...)`, `x[:, None]`, `jnp.sum(x, axis=…)` | `einx.rearrange`, `einx.sum` and friends |
 | A new exception for a bad argument | `ValidationError` |
@@ -92,7 +93,7 @@ These are the decisions of [#14](https://github.com/jejjohnson/tracerax/issues/1
 - **Units.** SI: metres, seconds, m s⁻¹, kg. Positions are metres in a local frame the caller chooses, because float32 cannot resolve a 1 cm step 10⁶ m from the origin. On the sphere they are (longitude, latitude) in degrees, and velocities stay in m s⁻¹.
 - **Axis order.** Position columns are (x, y) or (x, y, z), and cells follow the same order. A gridded velocity keeps its fields as (time, z, y, x) or (time, y, x).
 - **Velocity.** A callable `velocity(t, position)`, the argument order of diffrax and `integrix.march`, returning one velocity per particle. `t` is a scalar or one time per particle.
-- **Steps.** What moves a state is a `ParticleStep` ([#16](https://github.com/jejjohnson/tracerax/issues/16)): deterministic, Langevin, random displacement or, from Wave 3, inertial. One loop ([#20](https://github.com/jejjohnson/tracerax/issues/20)) runs any of them.
+- **Steps.** What moves a state is a `ParticleStep` ([#16](https://github.com/jejjohnson/tracerax/issues/16)): deterministic, on the plane or on the sphere, Langevin, random displacement or inertial. One loop ([#20](https://github.com/jejjohnson/tracerax/issues/20)) runs any of them.
 - **Time.** Seconds from an epoch the caller chooses near the run, because float32 resolves only 128 s at Unix-epoch seconds. A run has a start `t0`, which may be traced, and a static signed `duration`, negative for a backward run. Inside a run, times are offsets from `t0`.
 - **Randomness.** One key per run, passed in and split up front into one key per step, or the noise itself, one array per step. Nothing reads a global seed.
 - **Precision.** The output dtype follows the positions' dtype; nothing enables x64.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import einx
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -20,10 +21,14 @@ __all__ = [
     "angular_rate",
     "check_lonlat",
     "check_sphere",
+    "checked_lonlat",
     "normalise",
     "to_lonlat",
     "to_unit",
 ]
+
+
+_LATITUDES = "must hold latitudes between −90° and 90° in its second column"
 
 
 def check_sphere(earth: Ellipsoid) -> None:
@@ -68,14 +73,40 @@ def check_lonlat(
         latitude = latitude[np.asarray(active)]
     if (latitude > 90.0).any():
         raise ValidationError(
-            f"'{name}' must hold latitudes between −90° and 90° in its second "
-            f"column, got {np.nanmax(latitude)} in size"
+            f"'{name}' {_LATITUDES}, got {np.nanmax(latitude)} in size"
         )
 
 
+def checked_lonlat(
+    position: Float[Array, "*batch axis"],
+    name: str,
+    active: Bool[Array, "*batch"] | None = None,
+) -> Float[Array, "*batch axis"]:
+    """The positions, checked as by `check_lonlat` and, if traced, when they run.
+
+    The check of traced positions is a host callback, so it stays out of scans.
+
+    Raises:
+        ValidationError: As `check_lonlat` does.
+        EquinoxRuntimeError: If a traced latitude is outside [−90°, 90°].
+    """
+    check_lonlat(position, name, active)
+    if is_concrete(position, active):
+        return position
+    beyond = jnp.abs(position[..., 1]) > 90.0
+    if active is not None:
+        beyond = beyond & active
+    return eqx.error_if(position, beyond, f"'{name}' {_LATITUDES}")
+
+
 def to_unit(lonlat: Float[Array, "... 2"]) -> Float[Array, "... 3"]:
-    """r = (cos φ cos λ, cos φ sin λ, sin φ), from degrees."""
-    return lonlat_to_unit(lonlat, unit="degrees")
+    """r = (cos φ cos λ, cos φ sin λ, sin φ), from degrees.
+
+    A latitude beyond a pole gives NaN, where the formula would give another place.
+    """
+    latitude = lonlat[..., 1]
+    latitude = jnp.where(jnp.abs(latitude) > 90.0, jnp.nan, latitude)
+    return lonlat_to_unit(lonlat.at[..., 1].set(latitude), unit="degrees")
 
 
 def to_lonlat(vector: Float[Array, "... 3"]) -> Float[Array, "... 2"]:

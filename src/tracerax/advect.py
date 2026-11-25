@@ -10,6 +10,7 @@ from tracerax._src.advect.diffusivity import (
 )
 from tracerax._src.advect.displacement import RandomDisplacement, displacement_step
 from tracerax._src.advect.domain import Box
+from tracerax._src.advect.inertial import Inertial, SlowManifold
 from tracerax._src.advect.langevin import Langevin, langevin_step
 from tracerax._src.advect.loop import Accumulator, Result, integrate
 from tracerax._src.advect.sphere import DeterministicSphere, deterministic_sphere
@@ -25,9 +26,11 @@ __all__ = [
     "DeterministicSphere",
     "Diffusivity",
     "GriddedDiffusivity",
+    "Inertial",
     "Langevin",
     "RandomDisplacement",
     "Result",
+    "SlowManifold",
     "TurbulenceModel",
     "Walls",
     "deterministic",

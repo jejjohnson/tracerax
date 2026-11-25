@@ -105,6 +105,33 @@ drifter = RandomDisplacement(
 
 Where K varies, the step adds the drift ∂K/∂x. Without it particles gather where K is small, at every step size, and a cloud that starts uniform does not stay so. The scheme takes K to be nearly linear over one step, so keep the step under 0.1 / max |∂²K/∂x²|. A `GriddedDiffusivity` reads K from fields as `GriddedVelocity` reads a velocity; a closure such as Smagorinsky's is computed on the model's grid and passed that way.
 
+## Inertia
+
+A buoyant object of finite size at the sea surface does not follow the water. `Inertial` integrates its own velocity by the Maxey–Riley equation for the surface ocean (Beron-Vera, Olascoaga and Miron, 2019), and `SlowManifold` is the velocity that tends to when the response time τ is short: a `Velocity`, which runs under any step.
+
+```python
+from tracerax.advect import Inertial, integrate
+
+object_step = Inertial(
+    uniform(jnp.array([0.3, 0.1])),
+    uniform(jnp.array([8.0, 3.0])),
+    buoyancy=0.6,
+    response_time=600.0,
+    air_weight=0.05,
+    coriolis=1e-4,
+)
+state = at_point(jnp.zeros(2), 1)
+# each memory on the slow manifold at its release, so that there is no transient
+state = object_step.release(state, t0=0.0)
+result = integrate(state, object_step, t0=0.0, duration=86400.0, step_size=900.0)
+```
+
+- **The step is exact in the drag and the rotation**, with the flow frozen at the middle of the step, so it is stable for any τ. In a cellular flow of 50 km and 0.5 m s⁻¹ the error after a day and 32 to 35 km is below 1.6 m at a step of 900 s, and falls about four times per halving.
+- **`SlowManifold` is off by** 1.4 m at τ = 1 min, 116 m at 10 min and 1.9 km at 1 h in that flow.
+- **The derivatives of the velocities enter**, so a gridded one needs a scheme with a continuous gradient, such as `functax.interp.Cubic`; under a linear read the forcing jumps at cell faces.
+- **Forward only.** Backward, the drag grows an error like $e^{t/\tau}$, so `Inertial` refuses; run its `slow_manifold` under `Deterministic`.
+- **On the sphere** run `SlowManifold(..., earth=SPHERE)` under `DeterministicSphere`. It takes its derivatives in the local eastward and northward directions, and f = 2Ω sin φ when `coriolis` is not given. `Inertial` is in the plane only.
+
 ## The loop
 
 `integrate` runs any `ParticleStep`, forward or backward: a drifter, a diffusing tracer and a plume share one set of releases, masks, sums and saves.
