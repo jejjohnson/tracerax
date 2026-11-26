@@ -212,13 +212,18 @@ def _moving(particles: ParticleState) -> Any:
     return particles.position, particles.velocity, particles.active
 
 
-def _scan(adjoint: Checkpointed | Truncated | None) -> Callable[..., Any]:
-    """The scan of an adjoint."""
+def _scan(adjoint: object) -> Callable[..., Any]:
+    """The scan of an adjoint, refusing one the loop does not take."""
     if adjoint is None:
         return jax.lax.scan
     if isinstance(adjoint, Checkpointed):
         return lambda f, init, xs: checkpointed_scan(f, init, xs, every=adjoint.every)
-    return lambda f, init, xs: truncated_scan(f, init, xs, k=adjoint.k)
+    if isinstance(adjoint, Truncated):
+        return lambda f, init, xs: truncated_scan(f, init, xs, k=adjoint.k)
+    raise ValidationError(
+        "'adjoint' must be None, integrix.adjoint.Checkpointed or "
+        f"integrix.adjoint.Truncated, got {type(adjoint).__name__}"
+    )
 
 
 def integrate(
@@ -290,8 +295,9 @@ def integrate(
     Raises:
         ValidationError: If ``duration`` or ``step_size`` is not a finite number,
             a concrete time is too far from its epoch for the positions' dtype,
-            ``save_every`` does not divide the number of steps, or not exactly one
-            of ``key`` and ``noise`` is given for a step with noise.
+            ``save_every`` does not divide the number of steps, not exactly one
+            of ``key`` and ``noise`` is given for a step with noise, or
+            ``adjoint`` is not one of the three it takes.
 
     Examples:
         A drifter in a uniform current, released 13 s into the run:
@@ -315,6 +321,7 @@ def integrate(
         ((3, 1, 2), [0.0, 50.0, 100.0])
     """
     _check_run(duration, step_size, t0)
+    scan = _scan(adjoint)
     position = state.position
     dtype = position.dtype
     check_epoch(t0, "t0", step_size, dtype)
@@ -401,7 +408,6 @@ def integrate(
         jnp.asarray(lengths, dtype=dtype),
         draws,
     )
-    scan = _scan(adjoint)
     if save_every is None:
         (final, accumulated), _ = scan(advance, (state, total), inputs)
         return Result(final, accumulated, None, None)
