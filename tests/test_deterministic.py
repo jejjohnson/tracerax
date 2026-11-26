@@ -15,7 +15,7 @@ from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_trace
 from _oracles import DoubleGyre, SolidBodyRotation, uniform_wind_position
 
 from tracerax import ValidationError
-from tracerax.advect import Box, Deterministic, deterministic
+from tracerax.advect import Box, Deterministic, integrate
 from tracerax.particles import ParticleState, ParticleStep, along_line, at_point
 from tracerax.velocity import uniform, uniform_in_space
 
@@ -54,6 +54,28 @@ def _by_hand(
     return state
 
 
+def _run(
+    state: ParticleState,
+    velocity: Any,
+    *,
+    t0: Any,
+    duration: float,
+    n_steps: int,
+    solver: Any = SOLVERS["rk4"],
+    domain: Box | None = None,
+) -> ParticleState:
+    """The state after ``n_steps`` equal steps of `Deterministic` under the loop."""
+    result = integrate(
+        state,
+        Deterministic(velocity, solver),
+        t0=t0,
+        duration=duration,
+        step_size=abs(duration) / n_steps,
+        domain=domain,
+    )
+    return result.state
+
+
 class TestBox:
     def test_the_lower_corner_is_inside_and_the_upper_is_not(self) -> None:
         box = Box([0.0, 0.0, 0.0], [1.0, 2.0, 3.0])
@@ -73,16 +95,13 @@ class TestBox:
             Box([0.0], [1.0])
 
 
-class TestDeterministic:
-    """The solve."""
+class TestDeterministicRun:
+    """The step under the loop."""
 
     @pytest.mark.parametrize("n_steps", [50, 100, 200])
     def test_solid_body_rotation_returns_with_rk4s_error(self, n_steps: int) -> None:
         state = along_line(jnp.array([1.0, 0.0]), jnp.array([3.0, 0.0]), 4)
-        final, saved = deterministic(
-            state, ROTATION, t0=0.0, duration=100.0, n_steps=n_steps
-        )
-        assert saved is None
+        final = _run(state, ROTATION, t0=0.0, duration=100.0, n_steps=n_steps)
         error = np.linalg.norm(np.asarray(final.position - state.position), axis=1)
         radius = np.linalg.norm(np.asarray(state.position), axis=1)
         # RK4 on ẋ = iωx errs by (ωΔt)⁵/120 a step, so 2π (2π/n)⁴/120 a turn:
@@ -90,36 +109,20 @@ class TestDeterministic:
         expected = 2.0 * np.pi * (2.0 * np.pi / n_steps) ** 4 / 120.0
         assert_matches_oracle(error / radius, np.full(4, expected), rtol=0.02)
 
-    def test_it_is_diffeqsolve(self) -> None:
-        state = _line()
-        final, _ = deterministic(state, ROTATION, t0=7.0, duration=30.0, n_steps=20)
-        reference = dfx.diffeqsolve(
-            dfx.ODETerm(lambda t, y, args: ROTATION(t, y)),
-            SOLVERS["rk4"],
-            0.0,
-            30.0,
-            1.5,
-            state.position,
-        ).ys[0]
-        # rounding of 20 steps
-        assert_matches_oracle(final.position, reference, rtol=1e-13)
-
     @pytest.mark.parametrize("dim", [2, 3])
     def test_forward_and_back(self, dim: int) -> None:
         state = _line(dim)
-        final, _ = deterministic(state, _shear, t0=5.0, duration=3.0, n_steps=100)
+        final = _run(state, _shear, t0=5.0, duration=3.0, n_steps=100)
         final = _released_at(final, 8.0)
-        back, _ = deterministic(final, _shear, t0=8.0, duration=-3.0, n_steps=100)
+        back = _run(final, _shear, t0=8.0, duration=-3.0, n_steps=100)
         assert float(jnp.abs(final.position - state.position).max()) > 0.1
         assert_matches_oracle(back.position, state.position, rtol=0.0, atol=1e-6)
 
-    def test_an_order_four_solve_converges(self) -> None:
+    def test_an_order_four_run_converges(self) -> None:
         state = _line()
 
         def end(n_steps: int) -> np.ndarray:
-            final, _ = deterministic(
-                state, _shear, t0=1.0, duration=4.0, n_steps=n_steps
-            )
+            final = _run(state, _shear, t0=1.0, duration=4.0, n_steps=n_steps)
             return np.asarray(final.position)
 
         fine = end(1280)
@@ -128,46 +131,18 @@ class TestDeterministic:
         assert_matches_oracle(errors[0] / errors[1], 16.0, rtol=0.2)
         assert_matches_oracle(errors[1] / errors[2], 16.0, rtol=0.2)
 
-    @pytest.mark.parametrize("duration", [4.0, -4.0])
-    def test_a_saved_position_is_a_run_stopped_there(self, duration: float) -> None:
-        state = _released_at(_line(), 1.0)
-        save_at = duration * jnp.array([0.0, 0.25, 0.5, 1.0])
-        final, saved = deterministic(
-            state, _shear, t0=1.0, duration=duration, n_steps=8, save_at=save_at
-        )
-        assert saved.shape == (4, *state.position.shape)
-        assert_matches_oracle(saved[0], state.position, rtol=1e-15)
-        assert_matches_oracle(saved[-1], final.position, rtol=1e-14)
-        for index, n_steps in ((1, 2), (2, 4)):
-            stopped, _ = deterministic(
-                state,
-                _shear,
-                t0=1.0,
-                duration=float(save_at[index]),
-                n_steps=n_steps,
-            )
-            assert_matches_oracle(saved[index], stopped.position, rtol=1e-13)
-
     @pytest.mark.slow
     @pytest.mark.parametrize("domain", [None, Box([-9.0, -9.0], [9.0, 9.0])])
     def test_forward_mode_is_reverse_mode(self, domain: Box | None) -> None:
         state = _line()
 
-        def flow(position: jax.Array, adjoint: Any) -> jax.Array:
+        def flow(position: jax.Array) -> jax.Array:
             moved = eqx.tree_at(lambda s: s.position, state, position)
-            final, _ = deterministic(
-                moved,
-                _shear,
-                t0=1.0,
-                duration=2.0,
-                n_steps=20,
-                domain=domain,
-                adjoint=adjoint,
-            )
+            final = _run(moved, _shear, t0=1.0, duration=2.0, n_steps=20, domain=domain)
             return final.position
 
-        forward = jax.jacfwd(flow)(state.position, dfx.ForwardMode())
-        reverse = jax.jacrev(flow)(state.position, dfx.RecursiveCheckpointAdjoint())
+        forward = jax.jacfwd(flow)(state.position)
+        reverse = jax.jacrev(flow)(state.position)
         assert_matches_oracle(forward, reverse, rtol=0.0, atol=1e-10)
 
     @pytest.mark.slow
@@ -177,7 +152,7 @@ class TestDeterministic:
         def end(inputs: tuple[jax.Array, jax.Array]) -> jax.Array:
             position, speed = inputs
             moved = eqx.tree_at(lambda s: s.position, state, position)
-            final, _ = deterministic(
+            final = _run(
                 moved,
                 lambda t, x: speed * _shear(t, x),
                 t0=1.0,
@@ -195,13 +170,12 @@ class TestDeterministic:
         def flow(point: jax.Array) -> jax.Array:
             state = at_point(jnp.zeros(2), 1)
             state = eqx.tree_at(lambda s: s.position, state, point[None])
-            final, _ = deterministic(
+            final = _run(
                 state,
                 DoubleGyre(),
                 t0=0.0,
                 duration=15.0,
                 n_steps=150,
-                adjoint=dfx.ForwardMode(),
             )
             return final.position[0]
 
@@ -214,7 +188,7 @@ class TestDeterministic:
         wind = np.array([2.0, -1.0])
         release = 100.0 + direction * np.array([0.0, 4.0, 10.0, 20.0])
         state = at_point(jnp.zeros(2), 4, release_time=release)
-        final, _ = deterministic(
+        final = _run(
             state, uniform(wind), t0=100.0, duration=direction * 10.0, n_steps=5
         )
         expected = uniform_wind_position(
@@ -225,34 +199,16 @@ class TestDeterministic:
     def test_a_backward_run_waits_for_a_release_in_its_past(self) -> None:
         """The clock of a backward run has not come down to 0 yet."""
         state = at_point(jnp.zeros(2), 1, release_time=0.0)
-        final, _ = deterministic(
-            state, uniform(jnp.ones(2)), t0=10.0, duration=-5.0, n_steps=5
-        )
+        final = _run(state, uniform(jnp.ones(2)), t0=10.0, duration=-5.0, n_steps=5)
         assert_matches_oracle(final.position, np.zeros((1, 2)), rtol=0.0)
 
     def test_a_release_at_a_steps_end_does_not_reach_its_last_stage(self) -> None:
         """RK4's last stage is evaluated at the end of the step."""
         state = at_point(jnp.zeros(2), 1, release_time=2.0)
-        final, _ = deterministic(
+        final = _run(
             state, uniform(jnp.array([1.0, 0.0])), t0=0.0, duration=2.0, n_steps=1
         )
         assert_matches_oracle(final.position, np.zeros((1, 2)), rtol=0.0)
-
-    def test_a_release_inside_a_step_is_refused(self) -> None:
-        state = at_point(jnp.zeros(2), 1, release_time=3.0)
-        with pytest.raises(ValidationError, match="'release_time' must lie"):
-            deterministic(state, ROTATION, t0=0.0, duration=10.0, n_steps=5)
-
-    def test_a_traced_release_inside_a_step_is_refused(self) -> None:
-        @eqx.filter_jit
-        def run(release: jax.Array) -> jax.Array:
-            state = _released_at(at_point(jnp.zeros(2), 1), release)
-            final, _ = deterministic(state, ROTATION, t0=0.0, duration=10.0, n_steps=5)
-            return final.position
-
-        assert bool(jnp.isfinite(run(jnp.asarray(4.0))).all())
-        with pytest.raises(RuntimeError, match="'release_time' must lie"):
-            run(jnp.asarray(3.0))
 
     @pytest.mark.parametrize(
         ("release", "options"),
@@ -270,25 +226,12 @@ class TestDeterministic:
     ) -> None:
         state = at_point(jnp.zeros(2, jnp.float32), 1, release_time=release)
         wind = uniform(jnp.array([1.0, 0.0]))
-        final, _ = deterministic(state, wind, **options)
+        final = _run(state, wind, **options)
         direction = np.sign(options["duration"])
         wait = max(direction * (release - options["t0"]), 0.0)
         expected = direction * max(abs(options["duration"]) - wait, 0.0)
         # float32 times of order 1000 s round to 6e-5 s
         assert_matches_oracle(final.position[0, 0], expected, rtol=0.0, atol=1e-3)
-
-    def test_a_float32_save_at_the_end_is_accepted(self) -> None:
-        state = at_point(jnp.zeros(2, jnp.float32), 1)
-        _, saved = deterministic(
-            state,
-            uniform(jnp.ones(2)),
-            t0=0.0,
-            # NumPy compares a float32 with this in float64
-            duration=np.float64(0.1),
-            n_steps=3,
-            save_at=jnp.array([0.1], jnp.float32),
-        )
-        assert_matches_oracle(saved[0], np.full((1, 2), 0.1), rtol=1e-6)
 
     def test_gradient_in_a_release_on_a_step(self) -> None:
         """Exact for a steady velocity, also where a clip would tie."""
@@ -296,24 +239,16 @@ class TestDeterministic:
         def end(release: jax.Array) -> jax.Array:
             state = _released_at(at_point(jnp.zeros(2), 1), release)
             wind = uniform(jnp.array([3.0, 0.0]))
-            final, _ = deterministic(state, wind, t0=0.0, duration=10.0, n_steps=5)
+            final = _run(state, wind, t0=0.0, duration=10.0, n_steps=5)
             return final.position[0, 0]
 
         for release in (0.0, 4.0, 8.0):
             assert_matches_oracle(jax.grad(end)(jnp.asarray(release)), -3.0, rtol=1e-13)
 
-    def test_a_tableau_without_a_first_weight_is_refused_with_a_domain(self) -> None:
-        options = {"t0": 0.0, "duration": 1.0, "n_steps": 2, "solver": dfx.Midpoint()}
-        deterministic(_line(), ROTATION, **options)
-        with pytest.raises(ValidationError, match="Midpoint"):
-            deterministic(
-                _line(), ROTATION, domain=Box([-9.0, -9.0], [9.0, 9.0]), **options
-            )
-
     @pytest.mark.parametrize("solver", [dfx.Heun(), dfx.Tsit5(), dfx.Bosh3()])
     def test_a_particle_leaves_with_any_other_solver(self, solver: Any) -> None:
         state = at_point(jnp.array([5.6, 0.0]), 1)
-        final, _ = deterministic(
+        final = _run(
             state,
             uniform(jnp.array([1.0, 0.0])),
             t0=0.0,
@@ -331,7 +266,7 @@ class TestDeterministic:
         state = eqx.tree_at(
             lambda s: s.position, state, jnp.array([[0.0, 0.0], [4.0, 0.0]])
         )
-        final, _ = deterministic(
+        final = _run(
             state,
             uniform(jnp.array([0.3, 0.0])),
             t0=0.0,
@@ -348,8 +283,8 @@ class TestDeterministic:
         state = eqx.tree_at(
             lambda s: s.active, _line(), jnp.array([True, False, True, True, False])
         )
-        moved, _ = deterministic(_line(), _shear, t0=0.0, duration=2.0, n_steps=4)
-        final, _ = deterministic(state, _shear, t0=0.0, duration=2.0, n_steps=4)
+        moved = _run(_line(), _shear, t0=0.0, duration=2.0, n_steps=4)
+        final = _run(state, _shear, t0=0.0, duration=2.0, n_steps=4)
         expected = jnp.where(state.active[:, None], moved.position, state.position)
         assert_matches_oracle(final.position, expected, rtol=0.0)
 
@@ -362,7 +297,7 @@ class TestDeterministic:
             nonlocal traces
             traces += 1
             moved = _released_at(state, t0)
-            final, _ = deterministic(moved, _shear, t0=t0, duration=2.0, n_steps=4)
+            final = _run(moved, _shear, t0=t0, duration=2.0, n_steps=4)
             return final.position
 
         ends = [np.asarray(run(jnp.asarray(float(k)))) for k in range(50)]
@@ -375,42 +310,17 @@ class TestDeterministic:
 
         def run(t0: jax.Array, position: jax.Array) -> jax.Array:
             moved = eqx.tree_at(lambda s: s.position, state, position)
-            final, _ = deterministic(moved, _shear, t0=t0, duration=1.0, n_steps=3)
+            final = _run(moved, _shear, t0=t0, duration=1.0, n_steps=3)
             return final.position
 
         times, positions = jnp.arange(3.0), jax.random.normal(KEY, (3, 5, 2))
-        # a traced t0 skips the release check, and nothing else
         state = _released_at(state, -1.0)
         assert_traces(run, times, positions)
 
     def test_float32(self) -> None:
         state = along_line(jnp.zeros(2, jnp.float32), jnp.ones(2, jnp.float32), 3)
-        final, saved = deterministic(
-            state,
-            uniform(jnp.ones(2)),
-            t0=0.0,
-            duration=10.0,
-            n_steps=4,
-            save_at=jnp.array([10.0]),
-        )
-        assert final.position.dtype == saved.dtype == jnp.float32
-
-    @pytest.mark.parametrize(
-        ("options", "match"),
-        [
-            ({"duration": 0.0}, "'duration'"),
-            ({"duration": float("inf")}, "'duration'"),
-            ({"n_steps": 0}, "'n_steps'"),
-            ({"t0": jnp.zeros(2)}, "'t0'"),
-            ({"save_at": jnp.array([-1.0])}, "'save_at'"),
-            ({"save_at": jnp.array([5.0, 1.0])}, "'save_at'"),
-            ({"save_at": jnp.array([11.0])}, "'save_at'"),
-        ],
-    )
-    def test_invalid_arguments(self, options: dict[str, Any], match: str) -> None:
-        arguments = {"t0": 0.0, "duration": 10.0, "n_steps": 4} | options
-        with pytest.raises((ValidationError, TypeError), match=match):
-            deterministic(_line(), ROTATION, **arguments)
+        final = _run(state, uniform(jnp.ones(2)), t0=0.0, duration=10.0, n_steps=4)
+        assert final.position.dtype == jnp.float32
 
 
 class TestDeterministicStep:
@@ -422,15 +332,21 @@ class TestDeterministicStep:
     @pytest.mark.parametrize("solver", SOLVERS.values(), ids=SOLVERS)
     @pytest.mark.parametrize("duration", [3.0, -3.0])
     @pytest.mark.parametrize("dim", [2, 3])
-    def test_by_hand_it_is_the_solve(
+    def test_by_hand_it_is_diffeqsolve(
         self, solver: Any, duration: float, dim: int
     ) -> None:
         state = _released_at(_line(dim), 5.0)
         run = _by_hand(Deterministic(_shear, solver), state, 5.0, duration, 6)
-        final, _ = deterministic(
-            state, _shear, t0=5.0, duration=duration, n_steps=6, solver=solver
-        )
-        assert_matches_oracle(run.position, final.position, rtol=1e-12, atol=1e-13)
+        reference = dfx.diffeqsolve(
+            dfx.ODETerm(lambda t, y, args: _shear(t, y)),
+            solver,
+            5.0,
+            5.0 + duration,
+            duration / 6,
+            state.position,
+        ).ys[0]
+        # rounding of 6 steps
+        assert_matches_oracle(run.position, reference, rtol=1e-12, atol=1e-13)
 
     def test_durations_per_particle_are_separate_runs(self) -> None:
         state = _line()
@@ -495,8 +411,7 @@ class TestDeterministicStep:
         state = along_line(jnp.zeros(2, jnp.float32), jnp.ones(2, jnp.float32), 3)
         ones = jnp.ones(3, jnp.float32)
         moved = Deterministic(wind)(state, ones, ones, 1.0, None)
-        final, _ = deterministic(state, wind, t0=0.0, duration=1.0, n_steps=2)
-        assert moved.position.dtype == final.position.dtype == jnp.float32
+        assert moved.position.dtype == jnp.float32
 
     def test_an_implicit_solver_is_refused(self) -> None:
         with pytest.raises((ValidationError, TypeError), match="solver"):
