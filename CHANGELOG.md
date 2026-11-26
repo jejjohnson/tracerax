@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.7](https://github.com/jejjohnson/tracerax/compare/v0.0.6...v0.0.7) (2026-11-26)
+
+
+### Bug Fixes
+
+* **advect:** a NaN diffusivity gives NaN, so a particle on missing land stops, through pipekit-array's safe_sqrt ([#72](https://github.com/jejjohnson/tracerax/issues/72)) ([869f698](https://github.com/jejjohnson/tracerax/commit/869f6986758d5d8d6a5a3b188d8dd225a324951e)), closes [#60](https://github.com/jejjohnson/tracerax/issues/60)
+* **advect:** integrate refuses an adjoint it does not take, in place of an AttributeError ([#73](https://github.com/jejjohnson/tracerax/issues/73)) ([208c5c1](https://github.com/jejjohnson/tracerax/commit/208c5c1f9e946077e502b99e15b476c9c24b27fe)), closes [#61](https://github.com/jejjohnson/tracerax/issues/61)
+
 ## [0.0.6](https://github.com/jejjohnson/tracerax/compare/v0.0.5...v0.0.6) (2026-11-25)
 
 
