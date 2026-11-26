@@ -14,8 +14,8 @@ import pytest
 
 
 #: The stack libraries tracerax may load (AGENTS.md, "Boundaries"): functax,
-#: integrix and geophysix, and what they bring, which is never imported directly:
-#: gaussx is integrix's, and the two pipekit packages are geophysix's.
+#: integrix, geophysix and pipekit-array with pipekit-ops, and what they bring,
+#: which is never imported directly: gaussx is integrix's.
 ALLOWED = {
     "functax",
     "gaussx",

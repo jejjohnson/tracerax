@@ -8,6 +8,7 @@ import einx
 import jax.numpy as jnp
 from geophysix.earth import Ellipsoid, great_circle_distance
 from jaxtyping import Array, Bool, Float
+from pipekit_array.arrays import safe_sqrt
 
 from tracerax._src._sphere import check_sphere, checked_lonlat
 from tracerax._src._validate import as_floating
@@ -75,10 +76,8 @@ def distance_between(
     if kind == "sphere":
         return _great_circle(left, right, earth)
     squared = squared_distance(left, right, kind, earth)
-    # √, whose slope is infinite at 0; NaN is not 0 and stays
-    apart = squared != 0.0
-    root = jnp.sqrt(jnp.where(apart, squared, 1.0))
-    return jnp.where(apart, root, jnp.zeros((), squared.dtype))
+    # √, with a zero slope at 0; NaN stays
+    return safe_sqrt(squared, jnp)
 
 
 def _great_circle(
