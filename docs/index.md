@@ -1,8 +1,8 @@
 # tracerax
 
-> Lagrangian particles in JAX: advection, dispersion, deposits, residence and trajectory analysis.
+> Lagrangian particles in JAX: advection, dispersion, deposits, residence and the analysis of runs.
 
-tracerax is the GeoStack's library of Lagrangian particles: it carries a set of positions forward or backward in time, and analyses such positions. It holds particle states and seeding, velocities read from a grid, and deterministic, Langevin, random-displacement and inertial steps under one loop, deposits in cells, residence times and concentrations, forward and backward. It analyses what comes out: residence times, connectivity, Lyapunov exponents, dispersion and the skill of a trajectory.
+tracerax is the GeoStack's library of Lagrangian particles: it carries a set of positions forward or backward in time, and analyses runs of them. It holds particle states and seeding, velocities read from a grid, and deterministic, Langevin, random-displacement and inertial steps under one loop, deposits in cells, residence times and concentrations, forward and backward. It analyses what comes out: residence times, connectivity and Lyapunov exponents.
 
 It is written in JAX: every function is pure, its shapes are static, and the caller calls `jax.jit` once, at the top. Particles are masked, never dropped, so a run can be differentiated.
 

@@ -7,7 +7,7 @@ The house style (Python, maths notation, prose, pseudocode, reports) comes from 
 
 ## What this repo is
 
-tracerax is the GeoStack's library of Lagrangian particles, in JAX: it carries a set of positions forward (or backward) in time, and analyses such positions. It moves parcels deterministically, with turbulence or with a diffusivity, deposits them in cells, and sums what they leave there, forward or backward. It is a GeoNumerics library, above geophysix and gridax.
+tracerax is the GeoStack's library of Lagrangian particles, in JAX: it carries a set of positions forward (or backward) in time, and analyses runs of them. It moves parcels deterministically, with turbulence or with a diffusivity, deposits them in cells, and sums what they leave there, forward or backward. It is a GeoNumerics library, above geophysix and gridax.
 
 People build on a package like this, so **the package is a library of primitives**: new code composes what is here, and anything genuinely new lands where the next person will find and reuse it.
 
@@ -21,13 +21,13 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
 | `advect` | The deterministic step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
-| `analysis` | Residence times and connectivity of labelled regions, FTLE, dispersion, trajectory skill | now |
+| `analysis` | Residence times and connectivity of labelled regions, FTLE | now |
 
 ### Boundaries
 
 - **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix and geophysix, and nothing else from the GeoStack at runtime. It never imports geotoolz, pipekit (which geophysix brings, as `pipekit_array`), gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
 - **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix and geophysix. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.11 fixes functax v0.0.13, and any other functax fails to resolve. geophysix and the `gridax` extra are uv sources by tag, which move together too: gridax v0.3.3 fixes geophysix v0.0.9. gridax is the `gridax` extra, imported inside the function that needs it.
-- **Ownership test.** Is the state a set of positions carried forward in time, or does it analyse such positions? Then it belongs here. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics, surface footprints and source inversions are plumax's; plumax builds a footprint from `Langevin`, `integrate` and `Residence`. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
+- **Ownership test.** Is the state a set of positions carried forward in time, or does the analysis need the run or the cells? Then it belongs here. Scores that take arrays of positions alone (separation, skill, dispersion) are diagnostix's, in `diagnostix.trajectories`. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics, surface footprints and source inversions are plumax's; plumax builds a footprint from `Langevin`, `integrate` and `Residence`. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
 When other projects build on the package, list them here and keep their imports working through the change that moves them.
 
@@ -73,7 +73,8 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
-| A hand-written Earth radius or a great-circle distance | `geophysix.earth`; for two arrays of positions, plane or sphere, `distance_between` and `squared_distance` (`tracerax._src.analysis.distance`) |
+| A hand-written Earth radius or a great-circle distance | `geophysix.earth` |
+| A separation, a skill score or a dispersion of trajectories | `diagnostix.trajectories`, outside tracerax |
 | A material derivative, a vorticity, the gradient of a velocity at particles | `velocity_derivatives` (`tracerax._src.velocity.derivatives`) |
 | A loop of `jax.jvp` over the position columns | `tangents` with `unit_columns` (`tracerax._src.velocity.derivatives`) |
 | Unit vectors from longitude and latitude, east and north vectors | `tracerax._src._sphere`, on functax's |
@@ -88,7 +89,7 @@ Everything composes because it keeps these contracts; the tests in "What enforce
 
 These are the decisions of [#14](https://github.com/jejjohnson/tracerax/issues/14), where the measurements behind them are.
 
-- **Scope.** tracerax owns a calculation whose state is a set of positions carried forward in time, or that analyses such positions. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's.
+- **Scope.** tracerax owns a calculation whose state is a set of positions carried forward in time, or an analysis that needs the run or the cells. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's.
 - **Dependencies.** JAX, Equinox, einx, jaxtyping, diffrax, `functax[jax]`, integrix and geophysix are required; gridax is the `gridax` extra. No other stack library is imported: gaussx arrives through integrix and is never imported directly.
 - **JAX only.** Pure functions and Equinox modules. Nothing inside the library calls `jax.jit`; the caller jits once, at the top.
 - **Shapes are static.** Particles are masked, never dropped, and a masked particle keeps finite values.

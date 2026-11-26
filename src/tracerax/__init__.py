@@ -1,8 +1,8 @@
 """Lagrangian particles in JAX.
 
 ``tracerax`` owns a calculation whose state is a set of positions carried
-forward in time, or that analyses such positions: where parcels go, how a cloud
-disperses, what it leaves in a cell, and which surface a receptor saw.
+forward in time, or an analysis that needs such a run: where parcels go, how a
+cloud disperses, what it leaves in a cell, and how fast neighbours separate.
 
 ## Modules
 
@@ -14,7 +14,7 @@ Each is created by its first feature issue, so the later ones may not be here ye
 | `tracerax.velocity` | velocities at particles, uniform, gridded or summed |
 | `tracerax.advect` | deterministic, turbulent, diffusing and inertial steps, the loop |
 | `tracerax.bin` | cells, deposits, residence, concentrations |
-| `tracerax.analysis` | trajectory diagnostics, on the plane and on the sphere |
+| `tracerax.analysis` | regions, connectivity and FTLE, on the plane and on the sphere |
 """
 
 from __future__ import annotations
