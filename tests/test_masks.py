@@ -22,7 +22,6 @@ from tracerax.advect import (
     Deterministic,
     Langevin,
     RandomDisplacement,
-    deterministic,
     integrate,
 )
 from tracerax.particles import ParticleState, at_point
@@ -162,17 +161,20 @@ class TestWhenEveryParticleLeaves:
         value, gradient = jax.value_and_grad(loss)(jnp.asarray(1.7))
         assert bool(jnp.isfinite(value)) and bool(jnp.isfinite(gradient))
 
-    def test_the_solve(self) -> None:
+    def test_a_velocity_with_two_singular_places(self) -> None:
         def loss(scale: jax.Array) -> jax.Array:
-            final, _ = deterministic(
+            step = Deterministic(
+                lambda t, x: scale * jnp.sqrt(jnp.abs(x)) + jnp.log(5.5 - x[:, :1])
+            )
+            result = integrate(
                 self._state(),
-                lambda t, x: scale * jnp.sqrt(jnp.abs(x)) + jnp.log(5.5 - x[:, :1]),
+                step,
                 t0=0.0,
                 duration=20.0,
-                n_steps=20,
+                step_size=1.0,
                 domain=self.BOX,
             )
-            return jnp.sum(final.position)
+            return jnp.sum(result.state.position)
 
         value, gradient = jax.value_and_grad(loss)(jnp.asarray(0.2))
         assert bool(jnp.isfinite(value)) and bool(jnp.isfinite(gradient))
