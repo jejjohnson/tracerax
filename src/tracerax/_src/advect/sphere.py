@@ -11,6 +11,7 @@ from tracerax._src._sphere import (
     angular_rate,
     check_lonlat,
     check_sphere,
+    normalise,
     to_lonlat,
     to_unit,
 )
@@ -24,7 +25,10 @@ from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.uniform import Velocity
 
 
-__all__ = ["DeterministicSphere"]
+__all__ = [
+    "DeterministicSphere",
+    "UnitVectorStep",
+]
 
 
 class DeterministicSphere(eqx.Module):
@@ -132,4 +136,67 @@ class DeterministicSphere(eqx.Module):
         vector = runge_kutta(self.solver, rate, initial, start, duration, direction)
         # r ← r / |r|, which the angles do not depend on
         position = choose(moves, to_lonlat(vector), state.position)
+        return eqx.tree_at(lambda particles: particles.position, state, position)
+
+
+class UnitVectorStep(eqx.Module):
+    """The deterministic step on the sphere, on positions kept as unit vectors.
+
+    r ← r + d δ ∑_i b_i k_i,  r ← r / |r|, with the stages of
+    `DeterministicSphere`. A flow map that is differentiated keeps its positions
+    as unit vectors, which have a derivative at the poles and across the date
+    line, where a longitude has none.
+
+    Attributes:
+        velocity: (u, v)(t, (λ, φ)), eastward and northward [m s⁻¹].
+        solver: An explicit Runge–Kutta solver, whose tableau is read.
+        earth: The sphere, whose radius turns a velocity into a rate of turning.
+    """
+
+    velocity: Velocity
+    solver: dfx.AbstractERK = RK4
+    earth: Ellipsoid = SPHERE
+
+    def __check_init__(self) -> None:
+        check_explicit(self.solver)
+        check_sphere(self.earth)
+
+    def noise_shape(self, state: ParticleState) -> None:
+        """No noise: the step is deterministic."""
+        del state
+        return None
+
+    def __call__(
+        self,
+        state: ParticleState,
+        start: Float[Array, " particle"],
+        duration: Float[Array, " particle"],
+        direction: float,
+        noise: Float[Array, "..."] | None = None,
+    ) -> ParticleState:
+        """The state with its unit vectors moved over each particle's duration.
+
+        Args:
+            state: The state to move, with unit vectors for positions.
+            start: The time at which each particle's move begins [s].
+            duration: δ ≥ 0, one per particle [s].
+            direction: d = +1 forward in time, −1 backward.
+            noise: Unused.
+
+        Returns:
+            The moved state. An inactive particle, and one with duration 0, is
+            unchanged bit for bit.
+        """
+        del noise
+        moves = state.active & (duration > 0.0)
+
+        def rate(
+            time: Float[Array, " particle"], vector: Float[Array, "particle 3"]
+        ) -> Float[Array, "particle 3"]:
+            return angular_rate(self.velocity, time, vector, self.earth.semi_major)
+
+        initial = stand_in(state.position, moves)
+        vector = runge_kutta(self.solver, rate, initial, start, duration, direction)
+        # r ← r / |r|
+        position = choose(moves, normalise(vector), state.position)
         return eqx.tree_at(lambda particles: particles.position, state, position)

@@ -39,7 +39,7 @@ Skip anything ruff, ty or the tests already enforce (formatting, import order, `
 - Every function, class or module the diff **adds** has been checked against [`docs/api/capabilities.md`](docs/api/capabilities.md) and the private helpers in "Reuse before you write" in `AGENTS.md`. A re-implemented interpolation, binning or cell area functax has, or a solver, checkpointed scan or truncated scan integrix has, is a **High** finding, with the existing name to use.
 - No new runtime dependency without discussion; an optional one sits behind an extra and an in-function import that names the extra. `uv.lock` is updated with any dependency change.
 - Imports keep pointing one way (the module table in `AGENTS.md`); the library imports functax and integrix, and never geotoolz, pipekit, gaussx, kernellib or any model at runtime.
-- A rename or removal of a public name keeps the old name working with a `DeprecationWarning` for at least one release.
+- A rename or removal of a public name is a breaking change: the commit carries `!` and a `BREAKING CHANGE:` footer, and the name goes in the same commit. No deprecated alias is kept.
 
 ### 2. The contracts
 

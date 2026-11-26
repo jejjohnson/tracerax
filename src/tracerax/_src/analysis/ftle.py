@@ -15,10 +15,8 @@ from geophysix.earth import Ellipsoid
 from jaxtyping import Array, Float
 
 from tracerax._src._sphere import (
-    angular_rate,
     check_sphere,
     checked_lonlat,
-    normalise,
     to_lonlat,
     to_unit,
 )
@@ -28,9 +26,12 @@ from tracerax._src._validate import (
     check_dimension,
     is_concrete,
 )
-from tracerax._src.advect.deterministic import RK4, check_explicit, runge_kutta
-from tracerax._src.advect.loop import check_epoch
+from tracerax._src.advect.deterministic import RK4, Deterministic, check_explicit
+from tracerax._src.advect.loop import check_epoch, integrate
 from tracerax._src.advect.masks import stand_in
+from tracerax._src.advect.sphere import UnitVectorStep
+from tracerax._src.particles.state import ParticleState
+from tracerax._src.particles.step import ParticleStep
 from tracerax._src.velocity.uniform import Velocity
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError
@@ -78,9 +79,9 @@ def ftle(
     they attract.
 
     Algorithm:
-        1. Step the positions of every seed over a window, with the solver's
-           tableau unrolled, and push one tangent per position column through
-           the steps by forward mode. Each seed's velocity depends on its own
+        1. Run the positions of every seed over a window with
+           `tracerax.advect.integrate`, and push one tangent per position column
+           through the run by forward mode. Each seed's velocity depends on its own
            position only, so they share it.
         2. Multiply the windows' Jacobians. After each, divide the product by its
            largest entry and add the logarithm, so that nothing overflows.
@@ -157,34 +158,33 @@ def ftle(
     )
     dtype = seeds.dtype
     window = duration / n_windows
-    steps_per_window = n_steps // n_windows
-    direction = math.copysign(1.0, duration)
-    # h = |T| / K
-    step = jnp.full(n_seeds, abs(duration) / n_steps, dtype)
     start_time = jnp.asarray(t0, dtype=dtype)
-
-    def rate(
-        time: Float[Array, " seed"], where: Float[Array, "seed coordinate"]
-    ) -> Float[Array, "seed coordinate"]:
-        if earth is None:
-            return velocity(time, where).astype(dtype)
-        return angular_rate(velocity, time, where, earth.semi_major)
+    if earth is None:
+        step: ParticleStep = Deterministic(velocity, solver)
+    else:
+        step = UnitVectorStep(velocity, solver, earth)
 
     def flow(
         begin: ScalarLike, point: Float[Array, "seed coordinate"]
     ) -> Float[Array, "seed coordinate"]:
         """Φ over one window, of positions or, on the sphere, of unit vectors."""
-
-        def one_step(where: Any, index: Any) -> tuple[Any, None]:
-            # t_k = t + d k h
-            time = begin + direction * index * step
-            moved = runge_kutta(solver, rate, where, time, step, direction)
-            # r ← r / |r|
-            return (moved if earth is None else normalise(moved)), None
-
-        indices = jnp.arange(steps_per_window, dtype=dtype)
-        final, _ = jax.lax.scan(one_step, point, indices)
-        return final
+        released = jnp.broadcast_to(jnp.asarray(begin, dtype), (n_seeds,))
+        state = ParticleState(
+            point,
+            jnp.zeros_like(point),
+            jnp.ones(n_seeds, dtype),
+            released,
+            jnp.ones(n_seeds, bool),
+        )
+        result = integrate(
+            state,
+            step,
+            t0=begin,
+            duration=window,
+            # h = |T| / K
+            step_size=abs(duration) / n_steps,
+        )
+        return result.state.position
 
     def frame_at(
         point: Float[Array, "seed coordinate"],

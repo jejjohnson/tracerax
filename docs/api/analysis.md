@@ -63,7 +63,7 @@ exponent = ftle(seeds, strain, t0=0.0, duration=86_400.0, n_steps=96)
 - **Forward** in time the ridges repel, and **backward** they attract.
 - **On the sphere** (`earth=geophysix.earth.SPHERE`) seeds are longitudes and latitudes in degrees, and the Jacobian is taken in the local east–north frames at both ends. A seed may be at a pole: the velocity is then read 0.1 m from it in float64, and 2 km in float32.
 - **Long runs.** The stretch $e^{\Lambda T}$ overflows when ΛT is large, in float32 from 88 on; `n_windows` splits the run and rescales.
-- **Gradients.** The default solves in forward mode only. `adjoint=diffrax.DirectAdjoint()` supports `jax.grad` of the exponent. A seed at NaN spoils no other seed's gradient, but a path that leaves the data and reads a NaN does: clamp the field at its edge, which is `GriddedVelocity`'s default.
+- **Gradients.** `jax.grad` of the exponent works as it is, through the steps of the run. A seed at NaN spoils no other seed's gradient, but a path that leaves the data and reads a NaN does: clamp the field at its edge, which is `GriddedVelocity`'s default.
 
 ## Dispersion
 
@@ -103,7 +103,7 @@ score = cumulative_separation(simulated, observed)
 skill = skill_score(simulated, observed)
 ```
 
-- **They are losses too.** The gradient is finite where the two trajectories coincide, also at a shared starting point. Beyond the tolerance the skill's gradient is zero, so fit with `cumulative_separation`. `jax.grad` works as it is; a Gauss–Newton fit that takes `jax.jacfwd` needs `deterministic(..., adjoint=diffrax.ForwardMode())`.
+- **They are losses too.** The gradient is finite where the two trajectories coincide, also at a shared starting point. Beyond the tolerance the skill's gradient is zero, so fit with `cumulative_separation`. `jax.grad` and `jax.jacfwd` (for a Gauss–Newton fit) both work as they are on a trajectory from `integrate`.
 - **A missing observation is NaN.** It is left out of both sums, and the length bridges the gap in a straight line or along a great circle. A simulated NaN is not hidden.
 - **An observed path that does not move** gives an infinite separation, a skill of 0 and a gradient of 0; `min_length` adds a length to the denominator.
 - **Scores of an ensemble** are not here.
