@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from tracerax._src.advect.masks import choose, mean_velocity, stand_in
+from tracerax._src.advect.masks import choose, mean_at_start, stand_in
 from tracerax._src.advect.turbulence import TurbulenceModel
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
@@ -233,7 +233,7 @@ class Langevin(eqx.Module):
         """
         if noise is None:
             raise ValidationError("'noise' is required by a Langevin step, got None")
-        _, mean = mean_velocity(self.velocity, state, start, duration, direction)
+        _, mean = mean_at_start(self.velocity, state, start, duration, direction)
         return langevin_step(
             state, mean, self.turbulence, duration, noise, walls=self.walls
         )

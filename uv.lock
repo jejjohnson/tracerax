@@ -2663,6 +2663,7 @@ dependencies = [
     { name = "integrix" },
     { name = "jax" },
     { name = "jaxtyping" },
+    { name = "pipekit-array", extra = ["compat", "numpy"] },
 ]
 
 [package.optional-dependencies]
@@ -2712,6 +2713,7 @@ requires-dist = [
     { name = "integrix", git = "https://github.com/jejjohnson/integrix?rev=v0.0.11" },
     { name = "jax", specifier = ">=0.10" },
     { name = "jaxtyping", specifier = ">=0.3" },
+    { name = "pipekit-array", extras = ["numpy", "compat"], git = "https://github.com/jejjohnson/pipekit?subdirectory=packages%2Fpipekit-array&tag=pipekit-array-v0.2.0" },
 ]
 provides-extras = ["gridax"]
 
