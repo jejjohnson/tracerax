@@ -33,6 +33,9 @@ dependencies = [
     "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.11",
     # The Earth's radius and great-circle distances; it brings pipekit-array.
     "geophysix>=0.0.9",
+    # The array helpers (safe_sqrt) and, through it, pipekit-ops; the same
+    # extras and tag as geophysix's, so the two resolve to one commit.
+    "pipekit-array[numpy,compat]>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -97,6 +100,8 @@ default-groups = ["dev", "test"]
 # move together: gridax v0.3.3 is on geophysix v0.0.9.
 geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.9" }
 gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.3" }
+# The tag every package of the stack pins pipekit to (geophysix v0.0.9 included).
+pipekit-array = { git = "https://github.com/jejjohnson/pipekit", subdirectory = "packages/pipekit-array", tag = "pipekit-array-v0.2.0" }
 
 [build-system]
 requires = ["hatchling"]

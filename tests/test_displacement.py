@@ -12,7 +12,7 @@ import pytest
 from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _sampling import assert_mean, assert_uniform, assert_variance
 from functax.geometry import Axis, RectilinearGrid
-from functax.interp import Cubic
+from functax.interp import Cubic, Nearest
 
 from tracerax import ValidationError
 from tracerax.advect import (
@@ -381,6 +381,48 @@ class TestRandomDisplacement:
         )
         assert bool(moved.state.active.all())
         assert float(jnp.abs(moved.state.position - result.state.position).min()) > 0
+
+    def test_a_nan_diffusivity_gives_nan(self) -> None:
+        """A missing diffusivity is a missing value, not a zero one.
+
+        The square root used to be guarded by K δ > 0, which is false at NaN,
+        so a NaN diffusivity moved the particle by the mean drift alone.
+        """
+        state = at_point(jnp.array([1.2, 0.6]), 3)
+        wind = uniform(jnp.array([1.0, 0.0]))
+
+        @jax.jit
+        def run(value: jax.Array) -> jax.Array:
+            step = RandomDisplacement(wind, ConstantDiffusivity(value))
+            options = {"t0": 0.0, "duration": 10.0, "step_size": 1.0}
+            return integrate(state, step, key=KEY, **options).state.position
+
+        assert bool(jnp.isnan(run(jnp.full(2, jnp.nan))).all())
+        assert_matches_oracle(
+            run(jnp.zeros(2)), jnp.array([[11.2, 0.6]] * 3), rtol=1e-12, atol=1e-12
+        )
+
+    def test_a_particle_on_nan_land_stops(self) -> None:
+        """A nearest read of a field that is NaN past x = 5 m stops the cloud there."""
+        grid = RectilinearGrid(
+            (Axis(jnp.zeros(1)), Axis(jnp.arange(3.0)), Axis(jnp.arange(20.0)))
+        )
+        field = jnp.ones((1, 3, 20)).at[:, :, 5:].set(jnp.nan)
+        diffusivity = GriddedDiffusivity.fit(
+            (grid, grid), (field, field), scheme=Nearest()
+        )
+        step = RandomDisplacement(uniform(jnp.array([1.0, 0.0])), diffusivity)
+        result = integrate(
+            at_point(jnp.array([1.2, 0.6]), 3),
+            step,
+            t0=0.0,
+            duration=12.0,
+            step_size=1.0,
+            key=KEY,
+            domain=Box(jnp.full(2, -100.0), jnp.full(2, 100.0)),
+        )
+        assert not bool(result.state.active.any())
+        assert float(result.state.position[:, 0].max()) < 8.0
 
     def test_noise_is_required(self) -> None:
         with pytest.raises(ValidationError, match="'noise'"):
