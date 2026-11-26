@@ -9,7 +9,7 @@ from jaxtyping import Array, Float
 from pipekit_array.arrays import safe_sqrt
 
 from tracerax._src.advect.diffusivity import Diffusivity
-from tracerax._src.advect.masks import choose, mean_velocity, stand_in
+from tracerax._src.advect.masks import choose, mean_at_start, stand_in
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.derivatives import tangents, unit_columns
@@ -213,7 +213,7 @@ class RandomDisplacement(eqx.Module):
             raise ValidationError(
                 "'noise' is required by a random-displacement step, got None"
             )
-        time, mean = mean_velocity(self.velocity, state, start, duration, direction)
+        time, mean = mean_at_start(self.velocity, state, start, duration, direction)
         return displacement_step(
             state, mean, self.diffusivity, time, duration, noise, walls=self.walls
         )

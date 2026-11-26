@@ -13,7 +13,7 @@ from tracerax._src.velocity.uniform import Velocity
 
 __all__ = [
     "choose",
-    "mean_velocity",
+    "mean_at_start",
     "stand_in",
 ]
 
@@ -62,7 +62,7 @@ def stand_in(
     )
 
 
-def mean_velocity(
+def mean_at_start(
     velocity: Velocity,
     state: ParticleState,
     start: Float[Array, " particle"],
