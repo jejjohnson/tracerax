@@ -53,12 +53,6 @@
       - "src/tracerax/bin.py"
       - "src/tracerax/_src/bin/**"
 
-"area:footprint":
-  - changed-files:
-    - any-glob-to-any-file:
-      - "src/tracerax/footprint.py"
-      - "src/tracerax/_src/footprint/**"
-
 "area:analysis":
   - changed-files:
     - any-glob-to-any-file:

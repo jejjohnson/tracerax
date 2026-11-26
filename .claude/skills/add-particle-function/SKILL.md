@@ -16,7 +16,7 @@ Read "1. The conventions" and "2. Public functions and modules" under "The contr
 
 ## 2. Pick its home
 
-Private code goes in `src/tracerax/_src/<module>/<topic>.py`; the public module (`particles`, `velocity`, `advect`, `bin`, `footprint`, `analysis`) only re-exports it. A new public module is created by its first feature issue. A helper that two modules need goes in `src/tracerax/_src/`. A new exception goes in `exceptions.py`, derives from `TraceraxError` and the closest standard-library exception, and joins `tests/test_exceptions.py`.
+Private code goes in `src/tracerax/_src/<module>/<topic>.py`; the public module (`particles`, `velocity`, `advect`, `bin`, `analysis`) only re-exports it. A new public module is created by its first feature issue. A helper that two modules need goes in `src/tracerax/_src/`. A new exception goes in `exceptions.py`, derives from `TraceraxError` and the closest standard-library exception, and joins `tests/test_exceptions.py`.
 
 ## 3. Write it
 

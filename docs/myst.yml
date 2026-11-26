@@ -16,7 +16,7 @@ project:
   id: tracerax-docs
   title: tracerax
   description: >-
-    Lagrangian particles in JAX: advection, dispersion, deposits, footprints and
+    Lagrangian particles in JAX: advection, dispersion, deposits, residence and
     trajectory analysis.
   github: https://github.com/jejjohnson/tracerax
   authors:
