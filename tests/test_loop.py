@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
+import diffrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -827,3 +829,23 @@ class TestStatistics:
             state, STEP, t0=0.0, duration=duration, step_size=5.0, key=key_run
         )
         assert_uniform(result.state.position[:, 2], 0.0, 50.0)
+
+
+def test_an_adjoint_of_diffrax_is_refused() -> None:
+    """The loop takes None, Checkpointed or Truncated, and says so for the rest.
+
+    A diffrax adjoint used to fall through to the truncated scan and fail on
+    its missing ``k`` with an AttributeError.
+    """
+    step = Deterministic(uniform(jnp.array([1.0, 0.0])))
+    # jaxtyping's hook, on in the tests only, would refuse the type first
+    run = inspect.unwrap(integrate)
+    with pytest.raises(ValidationError, match="RecursiveCheckpointAdjoint"):
+        run(
+            at_point(jnp.zeros(2), 2),
+            step,
+            t0=0.0,
+            duration=10.0,
+            step_size=1.0,
+            adjoint=diffrax.RecursiveCheckpointAdjoint(),
+        )
