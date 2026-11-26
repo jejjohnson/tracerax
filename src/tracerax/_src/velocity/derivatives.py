@@ -104,7 +104,7 @@ def velocity_derivatives(
     """
     if earth is None:
         point: Any = position
-        n_particles, dim = position.shape
+        n_particles = position.shape[0]
         directions = unit_columns(position)
 
         def at(times: Any, points: Any) -> Any:
