@@ -19,7 +19,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `exceptions.py` | `TraceraxError` and its subclass `ValidationError` (also a `ValueError`) | now |
 | `particles` | The particle state, the `ParticleStep` protocol, seeding at points, along lines and over boxes | now |
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
-| `advect` | The deterministic solve and step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
+| `advect` | The deterministic step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
 | `footprint` | Surface footprints from backward runs | now |
 | `analysis` | Residence times and connectivity of labelled regions, FTLE, dispersion, trajectory skill | now |
@@ -41,7 +41,7 @@ Each foundation brings a rule. Breaking one runs fine on your machine and fails 
 | **JAX** | Everything | Traceable: static shapes, no Python control flow on traced values, no host round-trips. Nothing inside the library calls `jax.jit`: the caller jits once, at the top. |
 | **Equinox** | The state, the steps, the velocities and the accumulators as `eqx.Module`s | Arrays are always leaves; configuration is `eqx.field(static=True)`. Field checks in `__check_init__`, checks on traced values with `eqx.error_if`. |
 | **integrix** | The solvers, `checkpointed_scan` and `truncated_scan` | No Butcher tableau, checkpoint block or truncated gradient is written here. |
-| **diffrax** (minor version pinned, as integrix pins it) | `diffeqsolve`, its solvers' tableaux and its adjoints | `solver.step` inside a scan supports one AD mode only, so a step in the loop unrolls the tableau ([#18](https://github.com/jejjohnson/tracerax/issues/18)). |
+| **diffrax** (minor version pinned, as integrix pins it) | Its solvers' tableaux | `solver.step` inside a scan supports one AD mode only, so a step in the loop unrolls the tableau ([#18](https://github.com/jejjohnson/tracerax/issues/18)). |
 | **functax** (`functax[jax]`) | Interpolation of a gridded velocity, binning, edges and cell areas | No interpolation weight or bin index is written here, except the `searchsorted` of the nearest deposit, until [functax#168](https://github.com/jejjohnson/functax/issues/168). |
 | **einx** | Reductions, contractions, broadcasts and rearranges | No `axis=`, `.T`, `reshape` or `[:, None]` on dense arrays. |
 | **jaxtyping** | Array annotations | Named dims from the shared vocabulary ("House style"); checked at runtime in tests through the import hook in `tests/conftest.py`. |

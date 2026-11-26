@@ -44,7 +44,7 @@ exchange = connectivity(state.position, result.state.position, regions)
 
 ## Lyapunov exponents
 
-`ftle` is the rate at which two neighbours separate, from the Jacobian of the flow map. The Jacobian is exact: each solve carries one tangent per position column, so there are no neighbours to place and no spacing to tune.
+`ftle` is the rate at which two neighbours separate, from the Jacobian of the flow map. The Jacobian is exact: each run carries one tangent per position column, so there are no neighbours to place and no spacing to tune.
 
 ```python
 from tracerax.analysis import ftle
