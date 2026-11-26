@@ -39,12 +39,10 @@ def _end(
 ) -> jax.Array:
     """The positions after ``n_steps`` equal steps of the deterministic step."""
     size = abs(duration) / n_steps
-    step = Deterministic(
-        velocity, **({"solver": run.pop("solver")} if "solver" in run else {})
+    result = integrate(
+        state, Deterministic(velocity), duration=duration, step_size=size, **run
     )
-    return integrate(
-        state, step, duration=duration, step_size=size, **run
-    ).state.position
+    return result.state.position
 
 
 def _gyre_exponents(velocity: Any = GYRE, **options: Any) -> jax.Array:
