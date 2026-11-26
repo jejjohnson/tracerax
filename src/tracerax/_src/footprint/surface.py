@@ -176,7 +176,8 @@ def surface(
             two axes or one is too narrow for the receptor's dtype, ``duration``,
             ``step_size``, ``surface_depth`` or ``air_density`` is not positive,
             ``receptor_time`` is not a scalar or too far from its epoch for the
-            receptor's dtype, ``n_particles`` is below 1, or ``kind`` is unknown.
+            receptor's dtype, ``n_particles`` is below 1, ``kind`` is unknown, or
+            ``adjoint`` is not one that `integrate` takes.
 
     Examples:
         In a layer of 50 m that is all surface layer, the footprint sums to
