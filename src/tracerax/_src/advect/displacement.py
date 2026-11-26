@@ -6,9 +6,10 @@ import einx
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from pipekit_array.arrays import safe_sqrt
 
 from tracerax._src.advect.diffusivity import Diffusivity
-from tracerax._src.advect.masks import choose, mean_velocity, stand_in
+from tracerax._src.advect.masks import choose, mean_at_start, stand_in
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.derivatives import tangents, unit_columns
@@ -123,10 +124,9 @@ def displacement_step(
     scaled = "particle axis, particle -> particle axis"
     # 2 K δ
     variance = 2.0 * einx.multiply(scaled, value, elapsed)
-    # √(2 K δ), whose slope is infinite at K = 0
-    diffuses = variance > 0.0
-    root = jnp.sqrt(jnp.where(diffuses, variance, 1.0))
-    spread = jnp.where(diffuses, root, waiting)
+    # √(2 K δ): 0 with a zero slope at K δ ≤ 0, and NaN at a NaN K, so a
+    # particle on a missing diffusivity is deactivated like one on a NaN velocity
+    spread = safe_sqrt(variance, jnp)
 
     # --- move and reflect ---
     # x_i ← x_i + (u_i + ∂K_i/∂x_i) δ + √(2 K_i δ) ξ_i
@@ -213,7 +213,7 @@ class RandomDisplacement(eqx.Module):
             raise ValidationError(
                 "'noise' is required by a random-displacement step, got None"
             )
-        time, mean = mean_velocity(self.velocity, state, start, duration, direction)
+        time, mean = mean_at_start(self.velocity, state, start, duration, direction)
         return displacement_step(
             state, mean, self.diffusivity, time, duration, noise, walls=self.walls
         )
