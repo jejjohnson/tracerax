@@ -1,6 +1,6 @@
 [project]
 name = "tracerax"
-version = "0.0.6"
+version = "0.0.7"
 description = "Lagrangian particles in JAX: advection, dispersion, deposits, residence and trajectory analysis."
 authors = [
     {name="J. Emmanuel Johnson", email="jemanjohnson34@gmail.com"},
@@ -32,16 +32,16 @@ dependencies = [
     "functax[jax] @ git+https://github.com/jejjohnson/functax@v0.0.13",
     "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.11",
     # The Earth's radius and great-circle distances; it brings pipekit-array.
-    "geophysix>=0.0.9",
+    "geophysix>=0.0.10",
     # The array helpers (safe_sqrt) and, through it, pipekit-ops; the same
     # extras and tag as geophysix's, so the two resolve to one commit.
-    "pipekit-array[numpy,compat]>=0.2.0",
+    "pipekit-array[numpy,compat]>=0.3.0",
 ]
 
 [project.optional-dependencies]
 # Grids and masks, without gridax's own `jax` extra, which fixes functax
 # v0.0.11. gridax requires Python below 3.14.
-gridax = ["gridax>=0.3.3; python_version < '3.14'"]
+gridax = ["gridax>=0.3.4; python_version < '3.14'"]
 
 [project.urls]
 Repository = "https://github.com/jejjohnson/tracerax"
@@ -97,11 +97,11 @@ default-groups = ["dev", "test"]
 [tool.uv.sources]
 # Not on PyPI: these resolve from git, by tag. gridax writes geophysix and
 # pipekit in the same way, and uv reads "@v0.0.9" as another URL, so the two
-# move together: gridax v0.3.3 is on geophysix v0.0.9.
-geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.9" }
-gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.3" }
-# The tag every package of the stack pins pipekit to (geophysix v0.0.9 included).
-pipekit-array = { git = "https://github.com/jejjohnson/pipekit", subdirectory = "packages/pipekit-array", tag = "pipekit-array-v0.2.0" }
+# move together: gridax v0.3.4 is on geophysix v0.0.10.
+geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.10" }
+gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.4" }
+# The tag every package of the stack pins pipekit to (geophysix v0.0.10 included).
+pipekit-array = { git = "https://github.com/jejjohnson/pipekit", subdirectory = "packages/pipekit-array", tag = "pipekit-array-v0.3.0" }
 
 [build-system]
 requires = ["hatchling"]
