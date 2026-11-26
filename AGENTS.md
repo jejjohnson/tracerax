@@ -68,6 +68,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
 | A `where` on the result of a field read at a masked particle | `stand_in` before the read and `choose` after it (`tracerax._src.advect.masks`) |
+| The time and the mean velocity at the start of a stochastic step | `mean_velocity` (`tracerax._src.advect.masks`) |
 | A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
 | A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`); for the time spent in cells, `Residence` (`tracerax.bin`), and by each particle in labelled regions, `RegionTime` (`tracerax.analysis`) |
 | `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
@@ -75,6 +76,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
 | A hand-written Earth radius or a great-circle distance | `geophysix.earth`; for two arrays of positions, plane or sphere, `distance_between` and `squared_distance` (`tracerax._src.analysis.distance`) |
 | A material derivative, a vorticity, the gradient of a velocity at particles | `velocity_derivatives` (`tracerax._src.velocity.derivatives`) |
+| A loop of `jax.jvp` over the position columns | `tangents` with `unit_columns` (`tracerax._src.velocity.derivatives`) |
 | Unit vectors from longitude and latitude, east and north vectors | `tracerax._src._sphere`, on functax's |
 | `x.T`, `x.reshape(...)`, `x[:, None]`, `jnp.sum(x, axis=…)` | `einx.rearrange`, `einx.sum` and friends |
 | A new exception for a bad argument | `ValidationError` |
