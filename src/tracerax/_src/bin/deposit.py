@@ -114,10 +114,11 @@ def deposit(
     kept = jnp.where(inside, weight.astype(dtype), jnp.zeros((), dtype))
     # what is outside may be NaN: it is read in the first cell, with weight zero
     position = stand_in(position, inside, first_centre(edges, dtype))
+    # the plan builds axes of its own from the edges, which stay off the trace too
     with host_axes(edges):
         grid = cell_grid(edges)
-    # c = Hᵀ m
-    plan = Binning("sum", weights=kind).plan(
-        Points(position), grid, policies=_OVER_CELLS
-    )
+        # c = Hᵀ m
+        plan = Binning("sum", weights=kind).plan(
+            Points(position), grid, policies=_OVER_CELLS
+        )
     return plan(kept).reshape(grid.shape)

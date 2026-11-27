@@ -121,8 +121,8 @@ class Regions(eqx.Module):
         columns = stand_in(columns, inside, first_centre(edges, dtype))
         with host_axes(edges):
             grid = cell_grid(edges)
-        # l_p = (H l)_p: the adjoint of a sum is the read of the cell between edges
-        plan = Binning("sum").plan(Points(columns), grid)
+            # l_p = (H l)_p: the adjoint of a sum reads the cell between the edges
+            plan = Binning("sum").plan(Points(columns), grid)
         read = plan.adjoint(jnp.ravel(self.labels).astype(dtype))
         label = jnp.round(read).astype(self.labels.dtype)
         return jnp.where(inside, label, -1)
