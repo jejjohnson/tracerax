@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import einx
 import equinox as eqx
@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from functax.geometry import Points
-from functax.interp import Binning
+from functax.interp import Binning, TransposedStencil
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
 
@@ -121,10 +121,13 @@ class Regions(eqx.Module):
         columns = stand_in(columns, inside, first_centre(edges, dtype))
         with host_axes(edges):
             grid = cell_grid(edges)
-            # l_p = (H l)_p: the adjoint of a sum reads the cell between the edges
+            # the nearest plan has one tap per particle: the cell between the edges
             plan = Binning("sum").plan(Points(columns), grid)
-        read = plan.adjoint(jnp.ravel(self.labels).astype(dtype))
-        label = jnp.round(read).astype(self.labels.dtype)
+        # a binning plan reads through the transpose of its sampling stencil
+        read = cast(TransposedStencil, plan.read)
+        cell = read.stencil.indices[:, 0]
+        # the labels stay integers, which the positions' dtype may not hold
+        label = jnp.ravel(self.labels)[cell]
         return jnp.where(inside, label, -1)
 
 

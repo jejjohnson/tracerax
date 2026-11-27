@@ -62,7 +62,7 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | A bilinear or trilinear read, `jnp.searchsorted` on a grid axis, `map_coordinates` | functax's `Linear().fit(RectilinearGrid(...), ...)` with `Policies`; for one field per position column, `fit_components` and `read_components` (`tracerax._src.velocity.gridded`) |
 | A check of a count, of the position columns, or of whether a value is traced | `check_count`, `check_dimension`, `is_concrete` (`tracerax._src._validate`) |
 | `jnp.histogram`, `segment_sum` into cells, a deposit, a cloud-in-cell weight | `deposit` on `Cells` (`tracerax.bin`), one functax `Binning` plan that keeps the mass at walls and on stretched cells |
-| The cell each particle is in, or a value per cell read at the particles | the adjoint of a `Binning("sum")` plan on `cell_grid` (`tracerax._src.bin.cells`), as `Regions.at` reads its labels |
+| The cell each particle is in, as a flat index | the one tap per particle of a nearest `Binning` plan on `cell_grid` (`tracerax._src.bin.cells`, `plan.read.stencil.indices`), as `Regions.at` reads its labels |
 | A cell area or volume from edges | `Cells.volumes` (`tracerax.bin`), which is `functax.quad.cell_area` |
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers, stepped by `integrix.march.erk_step` |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
