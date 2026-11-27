@@ -27,10 +27,10 @@ dependencies = [
     # integrix fixes the same minor version.
     "diffrax>=0.7.2,<0.8",
     # Unpublished siblings resolve from git, by tag. The two move together:
-    # integrix fixes functax v0.0.14, and uv reports "conflicting URLs"
+    # integrix v0.0.13 fixes functax v0.0.15, and uv reports "conflicting URLs"
     # for any other. Both are written without .git, as integrix writes them.
-    "functax[jax] @ git+https://github.com/jejjohnson/functax@v0.0.14",
-    "integrix @ git+https://github.com/jejjohnson/integrix@f7825e39314c7d4e2969a7e998eb6ee5a30aa5f1",
+    "functax[jax] @ git+https://github.com/jejjohnson/functax@v0.0.15",
+    "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.13",
     # The Earth's radius and great-circle distances; it brings pipekit-array.
     "geophysix>=0.0.10",
     # The array helpers (safe_sqrt) and, through it, pipekit-ops; the same

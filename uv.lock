@@ -618,8 +618,8 @@ wheels = [
 
 [[package]]
 name = "functax"
-version = "0.0.14"
-source = { git = "https://github.com/jejjohnson/functax?rev=v0.0.14#c14c397568b9391d066f070cc68084c92f9b144c" }
+version = "0.0.15"
+source = { git = "https://github.com/jejjohnson/functax?rev=v0.0.15#b1086f4ad4596669b9be4bb4335976c43511bfa7" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -792,8 +792,8 @@ wheels = [
 
 [[package]]
 name = "integrix"
-version = "0.0.12"
-source = { git = "https://github.com/jejjohnson/integrix?rev=f7825e39314c7d4e2969a7e998eb6ee5a30aa5f1#f7825e39314c7d4e2969a7e998eb6ee5a30aa5f1" }
+version = "0.0.13"
+source = { git = "https://github.com/jejjohnson/integrix?rev=v0.0.13#dc3279f1d6f6ebd977da40a9d1b0d2bd52388335" }
 dependencies = [
     { name = "diffrax" },
     { name = "einx" },
@@ -2689,9 +2689,9 @@ requires-dist = [
     { name = "diffrax", specifier = ">=0.7.2,<0.8" },
     { name = "einx", specifier = ">=0.4.3" },
     { name = "equinox", specifier = ">=0.13.8" },
-    { name = "functax", extras = ["jax"], git = "https://github.com/jejjohnson/functax?rev=v0.0.14" },
+    { name = "functax", extras = ["jax"], git = "https://github.com/jejjohnson/functax?rev=v0.0.15" },
     { name = "geophysix", git = "https://github.com/jejjohnson/geophysix?tag=v0.0.10" },
-    { name = "integrix", git = "https://github.com/jejjohnson/integrix?rev=f7825e39314c7d4e2969a7e998eb6ee5a30aa5f1" },
+    { name = "integrix", git = "https://github.com/jejjohnson/integrix?rev=v0.0.13" },
     { name = "jax", specifier = ">=0.10" },
     { name = "jaxtyping", specifier = ">=0.3" },
     { name = "pipekit-array", extras = ["numpy", "compat"], git = "https://github.com/jejjohnson/pipekit?subdirectory=packages%2Fpipekit-array&tag=pipekit-array-v0.3.0" },
