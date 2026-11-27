@@ -120,7 +120,8 @@ class TestTheSteps:
             step_size=step_size,
             save_every=1,
         )
-        assert result.offsets.shape == (expected,)
+        # the start, then the end of each step
+        assert result.offsets.shape == (expected + 1,)
         assert_matches_oracle(result.offsets[-1], horizon, rtol=1e-12)
 
 
