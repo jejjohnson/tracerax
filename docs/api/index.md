@@ -10,7 +10,7 @@ The public API is the set of public modules below, plus the exceptions that `tra
 | [`tracerax.velocity`](velocity.md) | Velocities at particles: uniform, gridded through functax, weighted sums | available |
 | [`tracerax.advect`](advect.md) | Deterministic steps on the plane and on the sphere, Langevin, random-displacement and inertial steps, walls, the domain, and the loop that runs any step | available |
 | [`tracerax.bin`](bin.md) | Cells from edges, deposits that conserve mass at walls, residence, concentrations | available |
-| [`tracerax.analysis`](analysis.md) | Residence times and connectivity of labelled regions, FTLE, dispersion, trajectory skill | available |
+| [`tracerax.analysis`](analysis.md) | Residence times and connectivity of labelled regions, FTLE | available |
 | [Type aliases](typing.md) | `ScalarLike` | available |
 | [Exceptions](exceptions.md) | `TraceraxError`, `ValidationError` | available |
 

@@ -17,7 +17,7 @@ project:
   title: tracerax
   description: >-
     Lagrangian particles in JAX: advection, dispersion, deposits, residence and
-    trajectory analysis.
+    the analysis of runs.
   github: https://github.com/jejjohnson/tracerax
   authors:
     - name: J. Emmanuel Johnson
