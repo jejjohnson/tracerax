@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import einx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
+from functax.geometry import Points
+from functax.interp import Binning, TransposedStencil
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
 
 from tracerax._src._validate import check_count, is_concrete
-from tracerax._src.bin.cells import Cells, edges_in, flat_index, position_columns
+from tracerax._src.advect.masks import stand_in
+from tracerax._src.bin.cells import (
+    Cells,
+    cell_grid,
+    edges_in,
+    first_centre,
+    host_axes,
+    position_columns,
+)
 from tracerax._src.particles.state import ParticleState
 from tracerax.exceptions import ValidationError
 
@@ -105,11 +115,20 @@ class Regions(eqx.Module):
         """
         columns = position[:, position_columns(self.cells)]
         inside = self.cells.contains(columns)
+        dtype = columns.dtype
+        edges = edges_in(self.cells, dtype)
         # a particle outside has no cell: it is read in the first one
-        cell = jnp.where(
-            inside, flat_index(edges_in(self.cells, columns.dtype), columns), 0
-        )
-        return jnp.where(inside, jnp.ravel(self.labels)[cell], -1)
+        columns = stand_in(columns, inside, first_centre(edges, dtype))
+        with host_axes(edges):
+            grid = cell_grid(edges)
+            # the nearest plan has one tap per particle: the cell between the edges
+            plan = Binning("sum").plan(Points(columns), grid)
+        # a binning plan reads through the transpose of its sampling stencil
+        read = cast(TransposedStencil, plan.read)
+        cell = read.stencil.indices[:, 0]
+        # the labels stay integers, which the positions' dtype may not hold
+        label = jnp.ravel(self.labels)[cell]
+        return jnp.where(inside, label, -1)
 
 
 class RegionTime(eqx.Module):

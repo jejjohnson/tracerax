@@ -1,23 +1,21 @@
-"""Deposits of particle weights in cells, as transposes of functax stencils."""
+"""Deposits of particle weights in cells, as functax binning plans."""
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
-import einx
 import jax.numpy as jnp
-import numpy as np
-from functax.geometry import Axis, Points, RectilinearGrid
-from functax.interp import Binning, Stencil, TransposedStencil
+from functax.geometry import Points
+from functax.interp import Binning, Policies
 from jaxtyping import Array, Float
 
 from tracerax._src.advect.masks import stand_in
 from tracerax._src.bin.cells import (
     Cells,
-    cell_centres,
+    cell_grid,
     check_columns,
     edges_in,
-    flat_index,
+    first_centre,
     host_axes,
 )
 from tracerax.exceptions import ValidationError
@@ -29,6 +27,9 @@ __all__ = [
 ]
 
 _KINDS = ("nearest", "linear")
+
+#: Linear weights out to the edges, so the outer half cells keep their mass.
+_OVER_CELLS = Policies(extent="cells")
 
 
 def check_kind(kind: str) -> None:
@@ -57,11 +58,11 @@ def deposit(
 
     Algorithm:
         1. Give a particle outside the edges, or at NaN, the weight zero.
-        2. Nearest: i = max{j : e_j ≤ x} on each axis, one tap at the flat index.
-        3. Linear: the nodes are the cell centres and one ghost node past each
-           end, the reflection of the end centre in its edge. Deposit on them,
-           then add each ghost to its neighbour, so that a particle in an outer
-           half cell falls whole in the end cell.
+        2. Sum the weights with a functax `Binning` plan on the cells, whose
+           axes carry the edges. Nearest bins between the edges,
+           e_i ≤ x < e_{i+1}; linear, under ``extent="cells"``, reflects the end
+           centres in their edges, so a particle in an outer half cell falls
+           whole in the end cell.
 
     Args:
         cells: The cells, with D axes.
@@ -112,70 +113,12 @@ def deposit(
     inside = cells.contains(position)
     kept = jnp.where(inside, weight.astype(dtype), jnp.zeros((), dtype))
     # what is outside may be NaN: it is read in the first cell, with weight zero
-    corner = jnp.asarray([cell_centres(edge[:2])[0] for edge in edges], dtype=dtype)
-    position = stand_in(position, inside, corner)
-    if kind == "nearest":
-        return _nearest(edges, position, kept)
-    return _linear(edges, position, kept)
-
-
-def _nearest(
-    edges: tuple[Any, ...],
-    position: Float[Array, "particle axis"],
-    weight: Float[Array, " particle"],
-) -> Float[Array, "*cells"]:
-    """The histogram, for particles inside the edges.
-
-    It becomes `Binning("sum")` with jejjohnson/functax#168, until which the
-    latter ignores the edges of an axis.
-    """
-    shape = tuple(edge.shape[0] - 1 for edge in edges)
-    flat = flat_index(edges, position)
-    n_cells = int(np.prod(shape))
-    taps = einx.id("particle -> particle 1", flat)
-    # H has one tap of weight 1 per particle
-    read = Stencil(
-        taps, jnp.ones(taps.shape, weight.dtype), n_source=n_cells, check=False
-    )
-    ones = jnp.ones(n_cells, weight.dtype)
-    # c = Hᵀ m
-    sums = TransposedStencil(read, ones, ones > 0.0).apply(weight)
-    return sums.reshape(shape)
-
-
-def _linear(
-    edges: tuple[Any, ...],
-    position: Float[Array, "particle axis"],
-    weight: Float[Array, " particle"],
-) -> Float[Array, "*cells"]:
-    """Cloud-in-cell, for particles inside the edges.
-
-    It becomes one `Binning` call with jejjohnson/functax#169, until which the
-    latter drops what falls between an end centre and its edge.
-    """
+    position = stand_in(position, inside, first_centre(edges, dtype))
+    # the plan builds axes of its own from the edges, which stay off the trace too
     with host_axes(edges):
-        grid = RectilinearGrid([_with_ghosts(edge) for edge in edges])
-    # c = Hᵀ m, on the centres and the ghosts
-    plan = Binning("sum", weights="linear").plan(Points(position), grid)
-    padded = plan(weight).reshape(grid.shape)
-    for index in range(len(edges)):
-        padded = _fold_ghosts(padded, index)
-    return padded
-
-
-def _with_ghosts(edge: Any) -> Axis:
-    """The cell centres, with the end ones reflected in their edges."""
-    centres = jnp.asarray(cell_centres(edge))
-    # 2 e_0 − c_0
-    first = jnp.asarray(2.0 * edge[0] - centres[0])
-    # 2 e_n − c_{n−1}
-    last = jnp.asarray(2.0 * edge[-1] - centres[-1])
-    return Axis(einx.id(", node, -> (1 + node + 1)", first, centres, last))
-
-
-def _fold_ghosts(padded: Float[Array, "..."], index: int) -> Float[Array, "..."]:
-    """Add the first and last slice of one axis to their neighbours, and drop them."""
-    before = (slice(None),) * index
-    inner = padded[(*before, slice(1, -1))]
-    inner = inner.at[(*before, 0)].add(padded[(*before, 0)])
-    return inner.at[(*before, -1)].add(padded[(*before, -1)])
+        grid = cell_grid(edges)
+        # c = Hᵀ m
+        plan = Binning("sum", weights=kind).plan(
+            Points(position), grid, policies=_OVER_CELLS
+        )
+    return plan(kept).reshape(grid.shape)

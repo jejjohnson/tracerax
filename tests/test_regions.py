@@ -115,6 +115,13 @@ class TestRegions:
         position = _scattered(100).astype(jnp.float32)
         assert_matches_oracle(REGIONS.at(position), _label_by_hand(position), rtol=0.0)
 
+    def test_a_label_float32_cannot_hold_is_read_exactly(self) -> None:
+        """2²⁴ + 1 has no float32: a label is read as an integer, not a position."""
+        large = 2**24 + 1
+        regions = Regions(CELLS, LABELS.at[0, 0].set(large), n_regions=large + 1)
+        position = jnp.array([[0.5, 1.0], [5.0, 1.0]], dtype=jnp.float32)
+        assert regions.at(position).tolist() == [large, 1]
+
     @pytest.mark.parametrize(
         ("labels", "n_regions", "match"),
         [

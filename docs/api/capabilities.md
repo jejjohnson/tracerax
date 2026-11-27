@@ -119,7 +119,7 @@ current).
 | `concentration` | function | The concentration at one time, from the masses the particles carry. |
 | `steady_concentration` | function | The steady concentration of a continuous source, from one puff's residence. |
 
-### Deposits of particle weights in cells, as transposes of functax stencils. (`tracerax._src.bin.deposit`)
+### Deposits of particle weights in cells, as functax binning plans. (`tracerax._src.bin.deposit`)
 
 | Name | Kind | What it does |
 |---|---|---|
