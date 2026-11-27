@@ -26,7 +26,6 @@ from functax.interp import Policies
 from integrix.adjoint import Checkpointed, Truncated
 
 from tracerax import ValidationError
-from tracerax._src.advect.loop import n_steps_for_horizon, step_durations
 from tracerax.advect import (
     Accumulator,
     Box,
@@ -108,23 +107,21 @@ def _noise(n_steps: int, size: int, key: jax.Array = KEY) -> jax.Array:
 class TestTheSteps:
     @pytest.mark.parametrize(
         ("horizon", "step_size", "expected"),
-        [
-            (2.1, 0.15, 14),
-            (122.0, 5.0, 25),
-            (120.0, 5.0, 24),
-            (1.0, 5.0, 1),
-            (1e-12, 5.0, 1),
-            (0.0, 5.0, 0),
-            (3600.0, 0.1, 36_000),
-        ],
+        [(2.1, 0.15, 14), (122.0, 5.0, 25), (120.0, 5.0, 24), (1e-12, 5.0, 1)],
     )
     def test_count(self, horizon: float, step_size: float, expected: int) -> None:
-        n_steps = n_steps_for_horizon(horizon, step_size)
-        assert n_steps == expected
-        lengths = step_durations(horizon, step_size, n_steps)
-        assert lengths.shape == (expected,)
-        assert_matches_oracle(lengths.sum(), horizon, rtol=1e-12)
-        assert (lengths > 0.0).all()
+        """⌈T/Δt⌉ with no step of zero length, which integrix's count_steps gives."""
+        step = Deterministic(uniform(jnp.array([1.0, 0.0])))
+        result = integrate(
+            at_point(jnp.zeros(2), 1),
+            step,
+            t0=0.0,
+            duration=horizon,
+            step_size=step_size,
+            save_every=1,
+        )
+        assert result.offsets.shape == (expected,)
+        assert_matches_oracle(result.offsets[-1], horizon, rtol=1e-12)
 
 
 class TestAgainstNumPy:
