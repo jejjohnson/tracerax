@@ -38,11 +38,6 @@ dependencies = [
     "pipekit-array[numpy,compat]>=0.3.0",
 ]
 
-[project.optional-dependencies]
-# Grids and masks, without gridax's own `jax` extra, which fixes functax
-# v0.0.11. gridax requires Python below 3.14.
-gridax = ["gridax>=0.3.4; python_version < '3.14'"]
-
 [project.urls]
 Repository = "https://github.com/jejjohnson/tracerax"
 
@@ -95,11 +90,8 @@ docs = [
 default-groups = ["dev", "test"]
 
 [tool.uv.sources]
-# Not on PyPI: these resolve from git, by tag. gridax writes geophysix and
-# pipekit in the same way, and uv reads "@v0.0.9" as another URL, so the two
-# move together: gridax v0.3.4 is on geophysix v0.0.10.
+# Not on PyPI: these resolve from git, by tag.
 geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.10" }
-gridax = { git = "https://github.com/jejjohnson/gridax", subdirectory = "packages/gridax", tag = "gridax-v0.3.4" }
 # The tag every package of the stack pins pipekit to (geophysix v0.0.10 included).
 pipekit-array = { git = "https://github.com/jejjohnson/pipekit", subdirectory = "packages/pipekit-array", tag = "pipekit-array-v0.3.0" }
 
@@ -156,7 +148,6 @@ strict_markers = true
 markers = [
     "slow: takes over ~1 s; deselect with -m 'not slow'",
     "integration: end-to-end workflows, optional dependencies, external tools",
-    "gridax: needs the gridax extra; skipped when it is not installed (tests/conftest.py)",
 ]
 addopts = """\
     --doctest-modules \

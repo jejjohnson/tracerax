@@ -33,9 +33,19 @@ KEY = jax.random.key(0)
 RTOL, ATOL = 1e-12, 1e-12
 
 
+def _uniform_cgrid(times: Any, x: Any, y: Any, z: Any = None) -> tuple[Any, ...]:
+    """The grids of a uniform C-grid: u half a cell along x, v along y, w on z."""
+    x, y = jnp.asarray(x), jnp.asarray(y)
+    # u at xᵢ + Δx/2, v at yⱼ + Δy/2
+    x_u, y_v = x + 0.5 * (x[1] - x[0]), y + 0.5 * (y[1] - y[0])
+    if z is None:
+        return cgrid_grids(times, (x_u, y), (x, y_v))
+    return cgrid_grids(times, (x_u, y, z), (x, y_v, z), (x, y, z))
+
+
 def _stored_wind() -> tuple[GriddedVelocity, dict[str, np.ndarray]]:
     stored = reference_values("wind")
-    grids = cgrid_grids(stored["times"], stored["x"], stored["y"], stored["z"])
+    grids = _uniform_cgrid(stored["times"], stored["x"], stored["y"], stored["z"])
     fields = (stored["u"], stored["v"], stored["w"])
     return GriddedVelocity.fit(grids, fields), stored
 
@@ -47,7 +57,7 @@ def _gridded_2d(scheme: Any = None) -> GriddedVelocity:
         jnp.linspace(0, 100, 9),
         jnp.linspace(0, 60, 7),
     )
-    grids = cgrid_grids(times, x, y)
+    grids = _uniform_cgrid(times, x, y)
     fields = [jax.random.normal(key, (4, 7, 9)) for key in jax.random.split(KEY)]
     return GriddedVelocity.fit(grids, fields, scheme=scheme or Linear())
 
@@ -125,7 +135,7 @@ class TestGriddedVelocity:
         """u = x, v = y, w = z at their own staggered points."""
         x, y, z = jnp.arange(5.0), 2.0 * jnp.arange(4.0), jnp.array([0.0, 1.0, 5.0])
         levels = None if dim == 2 else z
-        grids = cgrid_grids(jnp.array([0.0, 10.0]), x, y, levels)
+        grids = _uniform_cgrid(jnp.array([0.0, 10.0]), x, y, levels)
         fields = []
         for column, grid in enumerate(grids):
             axes = [axis.values for axis in grid.axes]
@@ -137,7 +147,7 @@ class TestGriddedVelocity:
         assert_matches_oracle(velocity(3.0, position), position, rtol=1e-13)
 
     def test_linear_in_time_and_held_outside(self) -> None:
-        grids = cgrid_grids(jnp.array([0.0, 10.0]), jnp.arange(3.0), jnp.arange(3.0))
+        grids = _uniform_cgrid(jnp.array([0.0, 10.0]), jnp.arange(3.0), jnp.arange(3.0))
         ramp = jnp.stack([jnp.zeros((3, 3)), jnp.ones((3, 3))])
         velocity = GriddedVelocity.fit(grids, (ramp, 2.0 * ramp))
         position = jnp.array([[1.0, 1.0], [-50.0, 90.0]])
@@ -146,7 +156,7 @@ class TestGriddedVelocity:
             assert_matches_oracle(velocity(t, position), expected, rtol=1e-15)
 
     def test_one_sample_in_time_is_every_times(self) -> None:
-        grids = cgrid_grids(jnp.array([5.0]), jnp.arange(3.0), jnp.arange(3.0))
+        grids = _uniform_cgrid(jnp.array([5.0]), jnp.arange(3.0), jnp.arange(3.0))
         fields = [jax.random.normal(key, (1, 3, 3)) for key in jax.random.split(KEY)]
         velocity = GriddedVelocity.fit(grids, fields)
         position = jax.random.uniform(KEY, (6, 2)) * 2.0
@@ -186,7 +196,7 @@ class TestGriddedVelocity:
 
     def test_gradient_in_the_samples_is_the_plans_adjoint(self) -> None:
         stored = reference_values("wind")
-        grids = cgrid_grids(stored["times"], stored["x"], stored["y"], stored["z"])
+        grids = _uniform_cgrid(stored["times"], stored["x"], stored["y"], stored["z"])
         fields = tuple(jnp.asarray(stored[name]) for name in "uvw")
         position = jnp.asarray(stored["position"])
         residual = jax.random.normal(KEY, position.shape)
@@ -222,7 +232,7 @@ class TestGriddedVelocity:
         assert_matches_oracle(velocity(0.0, shifted), expected, rtol=0.0, atol=1e-13)
 
     def test_land_is_dropped_under_renormalise(self) -> None:
-        grids = cgrid_grids(jnp.array([0.0]), jnp.arange(3.0), jnp.arange(3.0))
+        grids = _uniform_cgrid(jnp.array([0.0]), jnp.arange(3.0), jnp.arange(3.0))
         field = jnp.ones((1, 3, 3)).at[0, 0, 0].set(jnp.nan)
         policies = Policies(outside="clamp", missing="renormalise")
         velocity = GriddedVelocity.fit(grids, (field, field), policies=policies)
@@ -246,7 +256,7 @@ class TestGriddedVelocity:
         assert _gridded_2d()(0.0, position).dtype == jnp.float32
 
     def test_invalid_arguments(self) -> None:
-        grids = cgrid_grids(jnp.array([0.0]), jnp.arange(3.0), jnp.arange(4.0))
+        grids = _uniform_cgrid(jnp.array([0.0]), jnp.arange(3.0), jnp.arange(4.0))
         field = jnp.zeros((1, 4, 3))
         fit = GriddedVelocity.fit
         with pytest.raises(ValidationError, match="2 or 3 components"):
@@ -262,19 +272,39 @@ class TestGriddedVelocity:
 
 
 class TestCgridGrids:
-    @pytest.mark.parametrize("bad", [np.array([0.0, 1.0, 3.0]), np.array([1.0])])
-    @pytest.mark.parametrize("name", ["x", "y"])
-    def test_x_and_y_are_uniform(self, name: str, bad: np.ndarray) -> None:
-        axes = {"x": np.arange(3.0), "y": np.arange(3.0)} | {name: bad}
-        with pytest.raises(ValidationError, match=f"'{name}'"):
-            cgrid_grids(np.array([0.0]), **axes)
+    def test_a_uniform_grid_is_the_t_points_shifted_half_a_cell(self) -> None:
+        times, x, y = jnp.array([0.0]), jnp.arange(4.0), 2.0 * jnp.arange(3.0)
+        z = jnp.array([0.0, 1.0, 5.0])
+        grids = _uniform_cgrid(times, x, y, z)
+        assert [grid.shape for grid in grids] == [(1, 3, 3, 4)] * 3
+        assert grids[0].axes[3].values.tolist() == [0.5, 1.5, 2.5, 3.5]
+        assert grids[1].axes[2].values.tolist() == [1.0, 3.0, 5.0]
+        assert grids[2].axes[1].values.tolist() == [0.0, 1.0, 5.0]
 
-    @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-    def test_a_long_axis_far_from_zero_is_uniform(self, dtype: Any) -> None:
-        axis = np.linspace(5e5, 6e5, 2001, dtype=dtype)
-        grids = cgrid_grids(np.array([0.0]), axis, axis)
-        # Δ = 50 m
-        assert_matches_oracle(grids[0].axes[2].values[0], 500_025.0, rtol=1e-7)
+    def test_a_stretched_grid_is_read_on_its_own_points(self) -> None:
+        """u = x and v = y at their own points, on stretched x and y."""
+        x, y = jnp.array([0.0, 1.0, 3.0, 7.0]), jnp.array([0.0, 2.0, 3.0])
+        x_u, y_v = 0.5 * (x[1:] + x[:-1]), 0.5 * (y[1:] + y[:-1])
+        grids = cgrid_grids(jnp.array([0.0, 10.0]), (x_u, y), (x, y_v))
+        fields = []
+        for column, grid in enumerate(grids):
+            mesh = jnp.meshgrid(*[axis.values for axis in grid.axes], indexing="ij")
+            fields.append(mesh[-1 - column])
+        velocity = GriddedVelocity.fit(grids, fields)
+        low, high = np.array([0.5, 1.0]), np.array([5.0, 2.5])
+        position = low + jax.random.uniform(KEY, (50, 2)) * (high - low)
+        assert_matches_oracle(velocity(3.0, position), position, rtol=1e-13)
+
+    def test_invalid_components(self) -> None:
+        times, axis = jnp.array([0.0]), jnp.arange(3.0)
+        with pytest.raises(ValidationError, match="'u' and 'v' must both have"):
+            cgrid_grids(times, (axis,), (axis,))
+        with pytest.raises(ValidationError, match="'u' and 'v' must both have"):
+            cgrid_grids(times, (axis, axis), (axis, axis, axis))
+        with pytest.raises(ValidationError, match="'w' must have 3 axes"):
+            cgrid_grids(times, (axis, axis, axis), (axis, axis, axis))
+        with pytest.raises(ValidationError, match="'w' must be None"):
+            cgrid_grids(times, (axis, axis), (axis, axis), (axis, axis, axis))
 
     def test_a_wind_is_built_inside_a_jit_on_axes_from_outside_it(self) -> None:
         # concrete axes, though the arithmetic on them is traced
@@ -282,7 +312,7 @@ class TestCgridGrids:
         position = jax.random.uniform(KEY, (5, 2)) * 3.0
 
         def moved(speed: jax.Array) -> jax.Array:
-            grids = cgrid_grids(times, axis, axis)
+            grids = _uniform_cgrid(times, axis, axis)
             fields = [speed * jnp.ones(grid.shape) for grid in grids]
             return GriddedVelocity.fit(grids, fields)(2.0, position)
 
@@ -290,19 +320,11 @@ class TestCgridGrids:
             jax.jit(moved)(jnp.array(3.0)), np.full((5, 2), 3.0), rtol=1e-14
         )
 
-        nodes = jnp.array([0.0, 1.0, 3.0])
-
-        def stretched(speed: jax.Array) -> jax.Array:
-            return speed * cgrid_grids(times, nodes, axis)[0].axes[2].values
-
-        with pytest.raises(ValidationError, match="uniformly spaced"):
-            jax.jit(stretched)(jnp.array(1.0))
-
 
 class TestWeightedSum:
     @staticmethod
     def _terms() -> tuple[GriddedVelocity, Any]:
-        coarse = cgrid_grids(
+        coarse = _uniform_cgrid(
             jnp.array([0.0, 200.0]), jnp.array([0.0, 200.0]), jnp.array([0.0, 90.0])
         )
         fields = [jax.random.normal(key, (2, 2, 2)) for key in jax.random.split(KEY)]

@@ -26,7 +26,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 ### Boundaries
 
 - **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix, geophysix and pipekit-array (with pipekit-ops, which it brings), and nothing else from the GeoStack at runtime. It never imports geotoolz, any other pipekit package, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
-- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix and `pipekit-array[numpy,compat]`. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.12 fixes functax v0.0.13, and any other functax fails to resolve. geophysix, pipekit-array and the `gridax` extra are uv sources by tag, which move together too: gridax v0.3.4 fixes geophysix v0.0.10, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is the `gridax` extra, imported inside the function that needs it.
+- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix and `pipekit-array[numpy,compat]`. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.12 fixes functax v0.0.13, and any other functax fails to resolve. geophysix and pipekit-array are uv sources by tag, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is never imported: a caller with a gridax grid passes its staggered coordinates to `cgrid_grids`.
 - **Ownership test.** Is the state a set of positions carried forward in time, or does the analysis need the run or the cells? Then it belongs here. Scores that take arrays of positions alone (separation, skill, dispersion) are diagnostix's, in `diagnostix.trajectories`. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics, surface footprints and source inversions are plumax's; plumax builds a footprint from `Langevin`, `integrate` and `Residence`. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
 When other projects build on the package, list them here and keep their imports working through the change that moves them.
@@ -45,7 +45,6 @@ Each foundation brings a rule. Breaking one runs fine on your machine and fails 
 | **pipekit-array** | `pipekit_array.arrays.safe_sqrt` | A helper about no particle is taken from it, not written here ([#46](https://github.com/jejjohnson/tracerax/issues/46)). |
 | **einx** | Reductions, contractions, broadcasts and rearranges | No `axis=`, `.T`, `reshape` or `[:, None]` on dense arrays. |
 | **jaxtyping** | Array annotations | Named dims from the shared vocabulary ("House style"); checked at runtime in tests through the import hook in `tests/conftest.py`. |
-| **gridax** (extra `gridax`) | Grids and masks, for the adapters that read one | Imported inside the function that needs it; gridax requires Python below 3.14. |
 | **SciPy, hypothesis, beartype** (the `test` group) | Reference results, property tests, the runtime type checker | Never imported by `src/`. plumax is never a test dependency, because plumax imports tracerax. |
 | **pytest + `--doctest-modules`** | The suite and every docstring `Examples:` block | An example's expected output is what the code prints; a stale example is a failing test. |
 
@@ -91,7 +90,7 @@ Everything composes because it keeps these contracts; the tests in "What enforce
 These are the decisions of [#14](https://github.com/jejjohnson/tracerax/issues/14), where the measurements behind them are.
 
 - **Scope.** tracerax owns a calculation whose state is a set of positions carried forward in time, or an analysis that needs the run or the cells. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's.
-- **Dependencies.** JAX, Equinox, einx, jaxtyping, diffrax, `functax[jax]`, integrix and geophysix are required; gridax is the `gridax` extra. No other stack library is imported: gaussx arrives through integrix and is never imported directly.
+- **Dependencies.** JAX, Equinox, einx, jaxtyping, diffrax, `functax[jax]`, integrix and geophysix are required, and there are no extras. No other stack library is imported: gaussx arrives through integrix and is never imported directly.
 - **JAX only.** Pure functions and Equinox modules. Nothing inside the library calls `jax.jit`; the caller jits once, at the top.
 - **Shapes are static.** Particles are masked, never dropped, and a masked particle keeps finite values.
 - **Units.** SI: metres, seconds, m s⁻¹, kg. Positions are metres in a local frame the caller chooses, because float32 cannot resolve a 1 cm step 10⁶ m from the origin. On the sphere they are (longitude, latitude) in degrees, and velocities stay in m s⁻¹.
@@ -130,13 +129,12 @@ Most rules here are tests, so CI tells you when one breaks. Read a test's docstr
 | `--doctest-modules` on `src/tracerax` (`addopts`) | Every docstring `Examples:` block runs and prints what it says |
 | `tests/test_exceptions.py` | The hierarchy: every error is a `TraceraxError` and a standard-library exception |
 | `tests/test_build_docs.py` | The two-tool docs pipeline: inventory parsing, anchor repair, link checking, the inventory port and the absolute nav URL in `docs/myst.yml`, the files copied to the site root (`ROOT_FILES`) |
-| `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; hypothesis has no deadline, because the first example compiles; tests marked `gridax` are skipped when it is not installed |
-| `tests/test_import_isolation.py` | Importing every module loads no stack library but functax, integrix and their own dependencies, and not gridax even when it is installed |
+| `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; hypothesis has no deadline, because the first example compiles |
+| `tests/test_import_isolation.py` | Importing every module loads no stack library but functax, integrix and their own dependencies |
 | `tests/test_harness.py` | The harness itself: one toy step passes every check, each check fails on a wrong function, each closed form agrees with an independent evaluation, and the reference runs are what they say |
-| CI job "with the gridax extra" | The `gridax` extra installs, and the tests pass with it |
 | `uv sync --locked` in every test job | `uv.lock` matches the pins in `pyproject.toml` |
 | `[tool.coverage.report] fail_under = 90` | Coverage of `src/tracerax` in every coverage-enabled run (CI, `uv run poe test-cov`) |
-| `strict_markers = true` | Only the registered markers (`slow`, `integration`, `gridax`) exist |
+| `strict_markers = true` | Only the registered markers (`slow`, `integration`) exist |
 | ruff (`select = E, F, I, UP, B, SIM, RUF`), ty | Lint (the whole repo), format, types on `src/tracerax` and `scripts` |
 
 Each function brings four tests, as `add-particle-function` lays out, with the helpers of `tests/` ([#15](https://github.com/jejjohnson/tracerax/issues/15)):
@@ -203,7 +201,7 @@ The markers are registered in `pyproject.toml` (`strict_markers = true`):
 - **`@pytest.mark.slow`:** a test over ~1 s (a large sweep, a long fit). For a parametrised test, mark only the expensive cases (`pytest.param(..., marks=pytest.mark.slow)`).
 - **`@pytest.mark.integration`:** end-to-end workflows, optional dependencies, external tools.
 
-CI ("Tests", `ci.yml`) runs every tier with coverage on Python 3.12 and 3.13 (`uv run pytest -v`), and again with the `gridax` extra. Select the fast tier with `uv run pytest -m "not slow and not integration"`; when the slow tiers grow, give them a CI job of their own rather than dropping them. `gridax` is not a tier: it says what a test needs.
+CI ("Tests", `ci.yml`) runs every tier with coverage on Python 3.12 and 3.13 (`uv run pytest -v`). Select the fast tier with `uv run pytest -m "not slow and not integration"`; when the slow tiers grow, give them a CI job of their own rather than dropping them.
 
 ### Tests that assert on random draws
 

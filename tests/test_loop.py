@@ -133,7 +133,15 @@ class TestAgainstNumPy:
             return uniform_in_space(lambda t: constant + t * slope)
         # the same wind on a grid: constant in space and linear in time
         times, axis = jnp.array([0.0, 1000.0]), jnp.array([-1000.0, 1000.0])
-        grids = cgrid_grids(times, axis, axis, jnp.array([0.0, 100.0]))
+        levels = jnp.array([0.0, 100.0])
+        # u half a cell along x, v along y, w on the levels
+        shifted = axis + 1000.0
+        grids = cgrid_grids(
+            times,
+            (shifted, axis, levels),
+            (axis, shifted, levels),
+            (axis, axis, levels),
+        )
         samples = constant[:, None] + slope[:, None] * times
         fields = [
             jnp.broadcast_to(sample[:, None, None, None], (2, 2, 2, 2))
