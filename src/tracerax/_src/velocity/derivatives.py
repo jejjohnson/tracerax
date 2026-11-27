@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import einx
@@ -18,8 +19,35 @@ from tracerax._src.velocity.uniform import Velocity
 
 __all__ = [
     "Derivatives",
+    "tangents",
+    "unit_columns",
     "velocity_derivatives",
 ]
+
+
+def unit_columns(
+    position: Float[Array, "particle axis"],
+) -> list[Float[Array, "particle axis"]]:
+    """One tangent per position column: every particle moved along that axis."""
+    dim = position.shape[-1]
+    return [jnp.zeros_like(position).at[:, k].set(1.0) for k in range(dim)]
+
+
+def tangents(
+    fn: Callable[[Any], Float[Array, "particle out"]],
+    point: Any,
+    directions: Sequence[Any],
+) -> Float[Array, "particle out direction"]:
+    """∂fn/∂ξ_j at each particle, by one forward pass per direction ξ_j.
+
+    Each particle's value must depend on its own point only, so one tangent
+    serves all of them.
+    """
+    columns = []
+    for direction in directions:
+        _, column = jax.jvp(fn, (point,), (direction,))
+        columns.append(column)
+    return jnp.stack(columns, axis=-1)
 
 
 class Derivatives(eqx.Module):
@@ -76,8 +104,8 @@ def velocity_derivatives(
     """
     if earth is None:
         point: Any = position
-        n_particles, dim = position.shape
-        directions = [jnp.zeros_like(position).at[:, k].set(1.0) for k in range(dim)]
+        n_particles = position.shape[0]
+        directions = unit_columns(position)
 
         def at(times: Any, points: Any) -> Any:
             return velocity(times, points).astype(position.dtype)
@@ -104,9 +132,6 @@ def velocity_derivatives(
     value, tendency = jax.jvp(
         lambda when: at(when, point), (times,), (jnp.ones_like(times),)
     )
-    columns = []
-    for direction in directions:
-        # ∂v/∂x_j
-        _, column = jax.jvp(lambda where: at(times, where), (point,), (direction,))
-        columns.append(column)
-    return Derivatives(value, tendency, jnp.stack(columns, axis=-1))
+    # ∂v_i/∂x_j
+    gradient = tangents(lambda where: at(times, where), point, directions)
+    return Derivatives(value, tendency, gradient)

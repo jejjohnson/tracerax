@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import einx
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 from pipekit_array.arrays import safe_sqrt
 
 from tracerax._src.advect.diffusivity import Diffusivity
-from tracerax._src.advect.masks import choose, stand_in
+from tracerax._src.advect.masks import choose, mean_at_start, stand_in
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
+from tracerax._src.velocity.derivatives import tangents, unit_columns
 from tracerax._src.velocity.uniform import Velocity
 from tracerax.exceptions import ValidationError
 
@@ -33,14 +33,11 @@ def _diffusivity_and_slope(
     def at(points: Float[Array, "particle axis"]) -> Float[Array, "particle axis"]:
         return diffusivity.at(t, points)
 
-    columns = []
-    for axis in range(position.shape[-1]):
-        along = jnp.zeros_like(position).at[:, axis].set(1.0)
-        # each particle's K depends on its own position only
-        _, tangent = jax.jvp(at, (position,), (along,))
-        # ∂K_i/∂x_i
-        columns.append(tangent[:, axis])
-    return at(position), jnp.column_stack(columns)
+    # each particle's K depends on its own position only
+    gradient = tangents(at, position, unit_columns(position))
+    # ∂K_i/∂x_i
+    slope = jnp.diagonal(gradient, axis1=1, axis2=2)
+    return at(position), slope
 
 
 def displacement_step(
@@ -216,11 +213,7 @@ class RandomDisplacement(eqx.Module):
             raise ValidationError(
                 "'noise' is required by a random-displacement step, got None"
             )
-        # the physical start of the interval, in both directions
-        time = jnp.minimum(start, start + direction * duration)
-        # d u(t, x)
-        moves = state.active & (duration > 0.0)
-        mean = direction * self.velocity(time, stand_in(state.position, moves))
+        time, mean = mean_at_start(self.velocity, state, start, duration, direction)
         return displacement_step(
             state, mean, self.diffusivity, time, duration, noise, walls=self.walls
         )
