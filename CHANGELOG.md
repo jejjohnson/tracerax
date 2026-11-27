@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/jejjohnson/tracerax/compare/v0.1.0...v0.2.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **bin:** cgrid_grids(times, x, y, z) becomes cgrid_grids(times, u, v, w), with each argument the positions of one component along (x, y) or (x, y, z); the gridax extra is removed.
+* **velocity:** cgrid_grids(times, x, y, z) becomes cgrid_grids(times, u, v, w), with each argument the positions of one component along (x, y) or (x, y, z); the gridax extra is removed.
+
+### Code Refactoring
+
+* **bin:** a deposit is one Binning plan on the grid of the cells, from functax ([#83](https://github.com/jejjohnson/tracerax/issues/83)) ([22cd05e](https://github.com/jejjohnson/tracerax/commit/22cd05ee64668a5bc52956f7dd172e2f4b7fec85))
+* **velocity:** cgrid_grids takes the positions of each component, and the unused gridax extra goes ([#82](https://github.com/jejjohnson/tracerax/issues/82)) ([d4ea873](https://github.com/jejjohnson/tracerax/commit/d4ea873c6cc863f9144c756aca37b30b0289254f))
+
 ## [0.1.0](https://github.com/jejjohnson/tracerax/compare/v0.0.7...v0.1.0) (2026-11-27)
 
 
