@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
-import diffrax as dfx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -16,7 +15,7 @@ from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_trace
 from geophysix.earth import SPHERE, WGS84, great_circle_distance, sphere
 
 from tracerax import ValidationError
-from tracerax.advect import deterministic
+from tracerax.advect import Deterministic, integrate
 from tracerax.analysis import cumulative_separation, separation, skill_score
 from tracerax.particles import at_point
 from tracerax.velocity import WeightedSum, uniform
@@ -274,7 +273,6 @@ def test_the_gradient_is_finite_at_a_perfect_forecast(distance: str) -> None:
 
 def test_a_windage_fit_recovers_three_per_cent() -> None:
     """The loss is the score of a drifter under a current and β of the wind."""
-    save_at = 3_600.0 * jnp.arange(25.0)
 
     def current(t: Any, position: jax.Array) -> jax.Array:
         x, y = position[:, 0] / 1e4, position[:, 1] / 1e4
@@ -283,16 +281,15 @@ def test_a_windage_fit_recovers_three_per_cent() -> None:
     def path(windage: Any) -> jax.Array:
         weights = jnp.stack([jnp.ones(()), jnp.asarray(windage)])
         drift = WeightedSum((current, uniform(jnp.array([8.0, 3.0]))), weights)
-        _, saved = deterministic(
+        result = integrate(
             at_point(jnp.zeros(2), 1),
-            drift,
+            Deterministic(drift),
             t0=0.0,
             duration=86_400.0,
-            n_steps=48,
-            save_at=save_at,
-            adjoint=dfx.ForwardMode(),
+            step_size=1_800.0,
+            save_every=2,
         )
-        return saved[:, 0]
+        return result.trajectory[:, 0]
 
     observed = path(0.03).at[5].set(jnp.nan)
 

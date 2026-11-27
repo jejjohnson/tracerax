@@ -7,6 +7,7 @@ from typing import Any
 
 import diffrax
 import equinox as eqx
+import integrix.march
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -33,7 +34,6 @@ from tracerax.advect import (
     Langevin,
     Result,
     Walls,
-    deterministic,
     integrate,
 )
 from tracerax.particles import (
@@ -400,15 +400,21 @@ class TestReleaseGradients:
 class TestDeterministicUnderTheLoop:
     @pytest.mark.parametrize("duration", [42.0, -42.0])
     @pytest.mark.parametrize("dim", [2, 3])
-    def test_it_is_the_solve(self, duration: float, dim: int) -> None:
+    def test_it_is_diffeqsolve(self, duration: float, dim: int) -> None:
         start, stop = jnp.arange(dim) + 1.0, jnp.arange(dim) + 9.0
         state = along_line(start, stop, 5, release_time=7.0)
         options = {"t0": 7.0, "duration": duration}
         result = integrate(state, Deterministic(ROTATION), step_size=3.0, **options)
-        final, _ = deterministic(state, ROTATION, n_steps=14, **options)
-        assert_matches_oracle(
-            result.state.position, final.position, rtol=1e-12, atol=1e-12
-        )
+        reference = diffrax.diffeqsolve(
+            diffrax.ODETerm(lambda t, y, args: ROTATION(t, y)),
+            integrix.march.RK4Classic(),
+            7.0,
+            7.0 + duration,
+            duration / 14,
+            state.position,
+        ).ys[0]
+        # rounding of 14 steps
+        assert_matches_oracle(result.state.position, reference, rtol=1e-12, atol=1e-12)
 
     def test_a_short_last_step_reaches_the_horizon(self) -> None:
         state = along_line(jnp.array([1.0, 0.0]), jnp.array([9.0, 0.0]), 5)
@@ -469,12 +475,6 @@ class TestDomain:
         assert_matches_oracle(
             result.state.position[:, 0], [-1.0, 1.0 + 2.0 * duration], rtol=1e-14
         )
-        if duration:
-            final, _ = deterministic(
-                state, step.velocity, t0=0.0, duration=3.0, n_steps=3, domain=box
-            )
-            assert_matches_oracle(final.position, result.state.position, rtol=1e-12)
-            assert_matches_oracle(final.active, result.state.active, rtol=0.0)
 
     def test_a_particle_that_reads_outside_the_data_stays_finite(self) -> None:
         nodes = jnp.linspace(0.0, 10.0, 5)

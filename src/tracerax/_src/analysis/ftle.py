@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import diffrax as dfx
@@ -14,16 +15,23 @@ from geophysix.earth import Ellipsoid
 from jaxtyping import Array, Float
 
 from tracerax._src._sphere import (
-    angular_rate,
     check_sphere,
     checked_lonlat,
     to_lonlat,
     to_unit,
 )
-from tracerax._src._validate import as_floating, check_count, check_dimension
-from tracerax._src.advect.deterministic import RK4, check_run, solve
+from tracerax._src._validate import (
+    as_floating,
+    check_count,
+    check_dimension,
+    is_concrete,
+)
+from tracerax._src.advect.deterministic import RK4, Deterministic, check_explicit
+from tracerax._src.advect.loop import check_epoch, integrate
 from tracerax._src.advect.masks import stand_in
-from tracerax._src.advect.sphere import ProjectedSolver
+from tracerax._src.advect.sphere import UnitVectorStep
+from tracerax._src.particles.state import ParticleState
+from tracerax._src.particles.step import ParticleStep
 from tracerax._src.velocity.uniform import Velocity
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError
@@ -31,7 +39,23 @@ from tracerax.exceptions import ValidationError
 
 __all__ = ["ftle"]
 
-_FORWARD = dfx.ForwardMode()
+
+def _check_run(duration: float, n_steps: int, t0: ScalarLike, dtype: Any) -> None:
+    """Raise unless the run is one: a duration, a step, and a time that fits them.
+
+    Raises:
+        ValidationError: If the duration is not finite or is 0, there is no step,
+            ``t0`` is not a scalar, or a concrete one is too far from its epoch
+            for the dtype.
+    """
+    check_count(n_steps, "n_steps")
+    if not is_concrete(duration) or not math.isfinite(duration) or duration == 0.0:
+        raise ValidationError(
+            f"'duration' must be a finite number other than 0, got {duration}"
+        )
+    if jnp.shape(t0) != ():
+        raise ValidationError(f"'t0' must be a scalar, got shape {jnp.shape(t0)}")
+    check_epoch(t0, "t0", abs(duration) / n_steps, dtype)
 
 
 def ftle(
@@ -41,10 +65,9 @@ def ftle(
     t0: ScalarLike,
     duration: float,
     n_steps: int,
-    solver: dfx.AbstractSolver = RK4,
+    solver: dfx.AbstractERK = RK4,
     n_windows: int = 1,
     earth: Ellipsoid | None = None,
-    adjoint: dfx.AbstractAdjoint = _FORWARD,
 ) -> Float[Array, " seed"]:
     """The finite-time Lyapunov exponent at each seed.
 
@@ -56,9 +79,10 @@ def ftle(
     they attract.
 
     Algorithm:
-        1. Solve the positions of every seed over a window, and push one tangent
-           per position column through the solve by forward mode. Each seed's
-           velocity depends on its own position only, so they share it.
+        1. Run the positions of every seed over a window with
+           `tracerax.advect.integrate`, and push one tangent per position column
+           through the run by forward mode. Each seed's velocity depends on its own
+           position only, so they share it.
         2. Multiply the windows' Jacobians. After each, divide the product by its
            largest entry and add the logarithm, so that nothing overflows.
         3. Take the largest eigenvalue of the Cauchy–Green tensor.
@@ -70,27 +94,27 @@ def ftle(
         t0: The start, in seconds from the run's epoch. It may be traced.
         duration: T [s], negative for a backward flow map. Static.
         n_steps: The number of steps over the whole duration.
-        solver: The diffrax or integrix solver.
+        solver: An explicit Runge–Kutta solver, of diffrax or integrix, whose
+            tableau is read.
         n_windows: In how many windows to split the duration. It must divide
             ``n_steps``. One is enough unless the exponent times the duration is
             large: e^{ΛT} overflows float32 at ΛT = 88.
         earth: The sphere the seeds are on, or ``None`` on the plane. The
             Jacobian is then taken in the local east–north frames at both ends.
-        adjoint: The diffrax adjoint of the solve, which must support forward
-            mode. ``diffrax.DirectAdjoint()`` supports a reverse-mode gradient of
-            the exponent too. A path that a NaN of the velocity ends spoils that
-            gradient for every seed, as in `tracerax.advect.integrate`: give such
-            a run a field that is defined where its paths go.
 
     Returns:
         Λ [s⁻¹], NaN at a seed whose path is not finite. Within √ε of a pole, with
-        ε the machine epsilon, the velocity is read at √ε from it.
+        ε the machine epsilon, the velocity is read at √ε from it. A reverse-mode
+        gradient of the exponent runs through the steps; a path that a NaN of the
+        velocity ends spoils it for every seed, as in `tracerax.advect.integrate`:
+        give such a run a field that is defined where its paths go.
 
     Raises:
         ValidationError: If ``duration`` is 0, ``n_steps`` or ``n_windows`` is
             below 1 or the second does not divide the first, a concrete ``t0`` is
             too far from its epoch for the seeds' dtype, the seeds have not 2 or 3
-            columns (2 on the sphere), or ``earth`` is not a sphere.
+            columns (2 on the sphere), ``earth`` is not a sphere, or the solver
+            is not explicit Runge–Kutta.
         EquinoxRuntimeError: If a traced latitude is beyond a pole.
 
     References:
@@ -111,7 +135,8 @@ def ftle(
         True
     """
     seeds = as_floating(seeds)
-    check_run(duration, n_steps, t0, seeds.dtype)
+    _check_run(duration, n_steps, t0, seeds.dtype)
+    check_explicit(solver)
     check_count(n_windows, "n_windows")
     if n_steps % n_windows:
         raise ValidationError(
@@ -124,7 +149,6 @@ def ftle(
     else:
         seeds = checked_lonlat(seeds, "seeds")
         check_sphere(earth)
-        solver = ProjectedSolver(solver)
     n_seeds, dim = seeds.shape
     # a seed at NaN would leave 0 × NaN in the reverse pass of every other one
     given = einx.all("seed [axis]", jnp.isfinite(seeds))
@@ -135,29 +159,32 @@ def ftle(
     dtype = seeds.dtype
     window = duration / n_windows
     start_time = jnp.asarray(t0, dtype=dtype)
+    if earth is None:
+        step: ParticleStep = Deterministic(velocity, solver)
+    else:
+        step = UnitVectorStep(velocity, solver, earth)
 
     def flow(
         begin: ScalarLike, point: Float[Array, "seed coordinate"]
     ) -> Float[Array, "seed coordinate"]:
         """Φ over one window, of positions or, on the sphere, of unit vectors."""
-
-        def rate(offset: Any, where: Any, args: Any) -> Any:
-            del args
-            time = begin + jnp.asarray(offset, dtype=dtype)
-            if earth is None:
-                return velocity(time, where).astype(dtype)
-            return angular_rate(velocity, time, where, earth.semi_major)
-
-        final, _ = solve(
-            dfx.ODETerm(rate),
+        released = jnp.broadcast_to(jnp.asarray(begin, dtype), (n_seeds,))
+        state = ParticleState(
             point,
-            duration=window,
-            n_steps=n_steps // n_windows,
-            solver=solver,
-            save_at=None,
-            adjoint=adjoint,
+            jnp.zeros_like(point),
+            jnp.ones(n_seeds, dtype),
+            released,
+            jnp.ones(n_seeds, bool),
         )
-        return final
+        result = integrate(
+            state,
+            step,
+            t0=begin,
+            duration=window,
+            # h = |T| / K
+            step_size=abs(duration) / n_steps,
+        )
+        return result.state.position
 
     def frame_at(
         point: Float[Array, "seed coordinate"],

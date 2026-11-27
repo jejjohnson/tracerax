@@ -18,7 +18,7 @@ from functax.interp import Cubic, Linear
 from geophysix.earth import SPHERE, WGS84
 
 from tracerax import ValidationError
-from tracerax.advect import deterministic
+from tracerax.advect import Deterministic, integrate
 from tracerax.analysis import ftle
 from tracerax.particles import ParticleState
 from tracerax.velocity import GriddedVelocity, uniform
@@ -32,6 +32,17 @@ def _gyre_seeds() -> jax.Array:
     x, y = jnp.linspace(0.05, 1.95, 24), jnp.linspace(0.05, 0.95, 12)
     grid = jnp.meshgrid(x, y, indexing="ij")
     return jnp.column_stack([axis.ravel() for axis in grid])
+
+
+def _end(
+    state: ParticleState, velocity: Any, *, duration: float, n_steps: int, **run: Any
+) -> jax.Array:
+    """The positions after ``n_steps`` equal steps of the deterministic step."""
+    size = abs(duration) / n_steps
+    result = integrate(
+        state, Deterministic(velocity), duration=duration, step_size=size, **run
+    )
+    return result.state.position
 
 
 def _gyre_exponents(velocity: Any = GYRE, **options: Any) -> jax.Array:
@@ -51,7 +62,7 @@ def _central_differences(velocity: Any, seeds: jax.Array, **run: Any) -> np.ndar
             jnp.zeros(n),
             jnp.ones(n, bool),
         )
-        return np.asarray(deterministic(state, velocity, **run)[0].position)
+        return np.asarray(_end(state, velocity, **run))
 
     step = 1e-5
     columns = []
@@ -136,7 +147,7 @@ def test_a_flow_without_divergence_stretches_the_same_backward() -> None:
         seeds, jnp.zeros_like(seeds), jnp.ones(n), jnp.zeros(n), jnp.ones(n, bool)
     )
     run = {"duration": 15.0, "n_steps": 300}
-    end = deterministic(state, GYRE, t0=0.0, **run)[0].position
+    end = _end(state, GYRE, t0=0.0, **run)
     forward = ftle(seeds, GYRE, t0=0.0, **run)
     backward = ftle(end, GYRE, t0=15.0, duration=-15.0, n_steps=300)
     assert_matches_oracle(backward, forward, rtol=0.0, atol=1e-5)
@@ -253,7 +264,7 @@ def test_one_trace_serves_every_start_time() -> None:
     assert len({float(value[0]) for value in values}) == 3
 
 
-def test_a_reverse_mode_gradient_with_the_direct_adjoint() -> None:
+def test_a_reverse_mode_gradient() -> None:
     def exponent(amplitude: jax.Array) -> jax.Array:
         return ftle(
             jnp.array([[0.3, 0.4], [1.2, 0.7]]),
@@ -262,7 +273,6 @@ def test_a_reverse_mode_gradient_with_the_direct_adjoint() -> None:
             duration=2.0,
             n_steps=10,
             n_windows=2,
-            adjoint=dfx.DirectAdjoint(),
         )
 
     assert_grad_matches_fd(exponent, jnp.array(0.1), eps=1e-6, rtol=1e-6)
@@ -288,7 +298,7 @@ def test_a_seed_that_is_nan_spoils_no_gradient() -> None:
             return rate * jnp.sin(position) * jnp.array([1.0, -1.0])
 
         run = {"t0": 0.0, "duration": 2.0, "n_steps": 10}
-        return ftle(seeds, velocity, adjoint=dfx.DirectAdjoint(), **run)
+        return ftle(seeds, velocity, **run)
 
     beside = jax.grad(lambda rate: exponents(rate, seeds)[0])(0.5)
     alone = jax.grad(lambda rate: exponents(rate, seeds[:1])[0])(0.5)
