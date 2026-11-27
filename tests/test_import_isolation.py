@@ -10,8 +10,6 @@ import json
 import subprocess
 import sys
 
-import pytest
-
 
 #: The stack libraries tracerax may load (AGENTS.md, "Boundaries"): functax,
 #: integrix, geophysix and pipekit-array with pipekit-ops, and what they bring,
@@ -91,9 +89,3 @@ def test_the_required_stack_libraries_load_only_the_allowed_ones() -> None:
     assert loaded & STACK <= ALLOWED
     # the check sees a stack library when one is loaded
     assert {"functax", "geophysix", "integrix"} <= loaded
-
-
-@pytest.mark.gridax
-def test_the_extra_is_not_loaded_by_the_package() -> None:
-    assert "gridax" in _loaded_by_importing_everything("import gridax\n")
-    assert "gridax" not in _loaded_by_importing_everything()

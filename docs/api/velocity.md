@@ -2,7 +2,7 @@
 
 A velocity is any callable `velocity(t, position)` that returns one velocity per particle, at one time or at one time per particle. It is the argument order of diffrax and of `integrix.march`, so a velocity also runs there.
 
-A C-grid keeps u, v and w at different points. `cgrid_grids` gives each component its own grid, so a particle reads the wind where the Eulerian solver puts it:
+A C-grid keeps u, v and w at different points. `cgrid_grids` gives each component its own grid, at the points the caller gives, so a particle reads the wind where the Eulerian solver puts it, on a stretched grid too:
 
 ```python
 import jax.numpy as jnp
@@ -12,7 +12,9 @@ times = jnp.array([0.0, 600.0])
 x, y, z = 50.0 * jnp.arange(8.0), 50.0 * jnp.arange(6.0), jnp.array([5.0, 20.0, 60.0])
 # each (time, z, y, x)
 u, v, w = 3.0 * jnp.ones((3, 2, 3, 6, 8))
-grids = velocity.cgrid_grids(times, x, y, z)
+# u half a cell along x, v half a cell along y, w on the levels
+x_u, y_v = x + 25.0, y + 25.0
+grids = velocity.cgrid_grids(times, (x_u, y, z), (x, y_v, z), (x, y, z))
 wind = velocity.GriddedVelocity.fit(grids, (u, v, w))
 ```
 

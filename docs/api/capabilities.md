@@ -168,7 +168,7 @@ current).
 | Name | Kind | What it does |
 |---|---|---|
 | `GriddedVelocity` | class | A velocity on a grid, each component on its own staggered nodes. |
-| `cgrid_grids` | function | The grids of the components of a uniform C-grid, for `GriddedVelocity.fit`. |
+| `cgrid_grids` | function | The grids of the components of a C-grid, each on its own points. |
 
 ### What a velocity is, and the velocities that do not vary in space. (`tracerax._src.velocity.uniform`)
 

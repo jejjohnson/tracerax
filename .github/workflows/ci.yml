@@ -37,16 +37,3 @@ jobs:
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
-
-  test-gridax-extra:
-    name: with the gridax extra
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: "3.12"
-      - name: Install the package, the tests and the extra
-        run: uv sync --locked --extra gridax
-      - name: Run the tests
-        run: uv run --no-sync pytest -v --no-cov

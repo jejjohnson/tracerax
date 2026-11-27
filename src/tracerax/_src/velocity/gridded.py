@@ -7,13 +7,11 @@ from typing import Any
 
 import equinox as eqx
 import jax.numpy as jnp
-import numpy as np
 from functax.geometry import Axis, RectilinearGrid
 from functax.interp import Interpolant, Linear, Policies
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
-from tracerax._src._validate import is_concrete
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError
 
@@ -130,7 +128,7 @@ class GriddedVelocity(eqx.Module):
         >>> import jax.numpy as jnp
         >>> from tracerax.velocity import GriddedVelocity, cgrid_grids
         >>> times, x, y = jnp.array([0.0, 60.0]), jnp.arange(4.0), jnp.arange(3.0)
-        >>> grids = cgrid_grids(times, x, y)
+        >>> grids = cgrid_grids(times, (x + 0.5, y), (x, y + 0.5))
         >>> u = jnp.broadcast_to(x + 0.5, (2, 3, 4))
         >>> velocity = GriddedVelocity.fit(grids, (u, jnp.zeros((2, 3, 4))))
         >>> velocity(30.0, jnp.array([[1.25, 0.5], [2.0, 1.5]])).tolist()
@@ -189,77 +187,78 @@ class GriddedVelocity(eqx.Module):
         return read_components(self.components, t, position)
 
 
-def _half_spacing(values: Float[Array, " node"], name: str) -> Float[Array, ""]:
-    """Δ/2 of a uniform axis.
-
-    Raises:
-        ValidationError: If it has one node, or is concrete and not uniform.
-    """
-    size = values.shape[0]
-    if size < 2:
-        raise ValidationError(f"'{name}' must have at least 2 nodes, got {size}")
-    # Δ = (a_{n−1} − a₀) / (n − 1)
-    spacing = (values[-1] - values[0]) / (size - 1)
-    if is_concrete(values):
-        nodes = np.asarray(values)
-        # in NumPy, because `spacing` is traced under a transformation
-        steps = np.diff(nodes)
-        mean_step = (nodes[-1] - nodes[0]) / (size - 1)
-        # rounding of nodes as large as the largest, whatever the dtype
-        tolerance = 8.0 * np.finfo(nodes.dtype).eps * np.abs(nodes).max()
-        if np.abs(steps - mean_step).max() > max(tolerance, 1e-6 * abs(mean_step)):
-            raise ValidationError(
-                f"'{name}' must be uniformly spaced for a C-grid; give "
-                "GriddedVelocity.fit the grids of a stretched one"
-            )
-    return 0.5 * spacing
-
-
 def cgrid_grids(
     times: Float[ArrayLike, " time"],
-    x: Float[ArrayLike, " x"],
-    y: Float[ArrayLike, " y"],
-    z: Float[ArrayLike, " z"] | None = None,
+    u: Sequence[Float[ArrayLike, " _node"]],
+    v: Sequence[Float[ArrayLike, " _node"]],
+    w: Sequence[Float[ArrayLike, " _node"]] | None = None,
 ) -> tuple[RectilinearGrid, ...]:
-    """The grids of the components of a uniform C-grid, for `GriddedVelocity.fit`.
+    """The grids of the components of a C-grid, each on its own points.
 
-    With T points (xᵢ, yⱼ, z_k), u sits at (xᵢ + Δx/2, yⱼ, z_k), v at
-    (xᵢ, yⱼ + Δy/2, z_k) and w at the T points. A model that keeps w half a
-    level higher passes its own grid for it.
+    Each component is read on the axes (time, z, y, x), or (time, y, x), of the
+    points where it sits. On a C-grid with T points (xᵢ, yⱼ, z_k), u sits half a
+    cell along x and v half a cell along y; w sits on the T levels or half a
+    level above them, as the model keeps it. The caller gives each position, so
+    a stretched grid works and no shift is computed here.
 
     Args:
         times: The sample times [s], strictly increasing. One sample is read at
             every time.
-        x: The T points along x [m], uniformly spaced.
-        y: The T points along y [m], uniformly spaced.
-        z: The T points along z [m], of any spacing, or ``None`` in two
-            dimensions.
+        u: Where u sits, one array per axis, in the order (x, y) or (x, y, z) [m].
+        v: Where v sits, along the same axes as ``u`` [m].
+        w: Where w sits, along (x, y, z) [m], when ``u`` and ``v`` have three
+            axes; ``None`` in two dimensions.
 
     Returns:
-        The grids of (u, v) or (u, v, w), with the axes (time, z, y, x) or
-        (time, y, x).
+        The grids of (u, v) or (u, v, w), for `GriddedVelocity.fit`, with the
+        axes (time, z, y, x) or (time, y, x).
 
     Raises:
-        ValidationError: If x or y has one node or is not uniformly spaced.
+        ValidationError: If ``u`` and ``v`` do not both have 2 or 3 axes, or
+            ``w`` is missing in three dimensions, given in two, or has not 3 axes.
 
     Examples:
+        A uniform C-grid with T points at x = 0, 1, 2, 3 and y = 0, 1, 2:
+
         >>> import jax.numpy as jnp
         >>> from tracerax.velocity import cgrid_grids
-        >>> grids = cgrid_grids(jnp.array([0.0]), jnp.arange(4.0), jnp.arange(3.0))
+        >>> x, y = jnp.arange(4.0), jnp.arange(3.0)
+        >>> grids = cgrid_grids(jnp.array([0.0]), (x + 0.5, y), (x, y + 0.5))
         >>> [grid.shape for grid in grids]
         [(1, 3, 4), (1, 3, 4)]
         >>> grids[0].axes[2].values.tolist(), grids[1].axes[1].values.tolist()
         ([0.5, 1.5, 2.5, 3.5], [0.5, 1.5, 2.5])
+
+        A stretched axis is read where its points are:
+
+        >>> z = jnp.array([0.0, 1.0, 5.0])
+        >>> grids = cgrid_grids(
+        ...     jnp.array([0.0]), (x + 0.5, y, z), (x, y + 0.5, z), (x, y, z + 0.5)
+        ... )
+        >>> grids[2].axes[1].values.tolist()
+        [0.5, 1.5, 5.5]
     """
+    u, v = tuple(u), tuple(v)
+    n_axes = len(u)
+    if n_axes not in (2, 3) or len(v) != n_axes:
+        raise ValidationError(
+            "'u' and 'v' must both have 2 axes (x, y) or 3 (x, y, z), got "
+            f"{len(u)} and {len(v)}"
+        )
+    components = [u, v]
+    if n_axes == 3:
+        if w is None or len(tuple(w)) != 3:
+            got = "None" if w is None else f"{len(tuple(w))} axes"
+            raise ValidationError(
+                f"'w' must have 3 axes (x, y, z) when 'u' and 'v' have 3, got {got}"
+            )
+        components.append(tuple(w))
+    elif w is not None:
+        raise ValidationError("'w' must be None when 'u' and 'v' have 2 axes")
     time_axis = Axis(jnp.asarray(times))
-    nodes_x, nodes_y = jnp.asarray(x), jnp.asarray(y)
-    axis_x, axis_y = Axis(nodes_x), Axis(nodes_y)
-    levels = () if z is None else (Axis(jnp.asarray(z)),)
-    # u at xᵢ + Δx/2, v at yⱼ + Δy/2
-    shifted_x = Axis(nodes_x + _half_spacing(nodes_x, "x"))
-    shifted_y = Axis(nodes_y + _half_spacing(nodes_y, "y"))
-    grid_u = RectilinearGrid((time_axis, *levels, axis_y, shifted_x))
-    grid_v = RectilinearGrid((time_axis, *levels, shifted_y, axis_x))
-    if z is None:
-        return grid_u, grid_v
-    return grid_u, grid_v, RectilinearGrid((time_axis, *levels, axis_y, axis_x))
+    grids = []
+    for axes in components:
+        # (x, y, z) → (z, y, x)
+        spatial = [Axis(jnp.asarray(values)) for values in reversed(axes)]
+        grids.append(RectilinearGrid((time_axis, *spatial)))
+    return tuple(grids)

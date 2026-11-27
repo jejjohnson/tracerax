@@ -670,19 +670,6 @@ wheels = [
 ]
 
 [[package]]
-name = "gridax"
-version = "0.3.4"
-source = { git = "https://github.com/jejjohnson/gridax?subdirectory=packages%2Fgridax&tag=gridax-v0.3.4#17ec4b5cb178828edeb7c57b5c3689238a9df315" }
-dependencies = [
-    { name = "geophysix", marker = "python_full_version < '3.14'" },
-    { name = "jaxtyping", marker = "python_full_version < '3.14'" },
-    { name = "numpy", marker = "python_full_version < '3.14'" },
-    { name = "pipekit-array", extra = ["compat", "numpy"], marker = "python_full_version < '3.14'" },
-    { name = "pipekit-ops", marker = "python_full_version < '3.14'" },
-    { name = "scipy", marker = "python_full_version < '3.14'" },
-]
-
-[[package]]
 name = "griffelib"
 version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2666,11 +2653,6 @@ dependencies = [
     { name = "pipekit-array", extra = ["compat", "numpy"] },
 ]
 
-[package.optional-dependencies]
-gridax = [
-    { name = "gridax", marker = "python_full_version < '3.14'" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "cyclopts" },
@@ -2709,13 +2691,11 @@ requires-dist = [
     { name = "equinox", specifier = ">=0.13.8" },
     { name = "functax", extras = ["jax"], git = "https://github.com/jejjohnson/functax?rev=v0.0.13" },
     { name = "geophysix", git = "https://github.com/jejjohnson/geophysix?tag=v0.0.10" },
-    { name = "gridax", marker = "python_full_version < '3.14' and extra == 'gridax'", git = "https://github.com/jejjohnson/gridax?subdirectory=packages%2Fgridax&tag=gridax-v0.3.4" },
     { name = "integrix", git = "https://github.com/jejjohnson/integrix?rev=v0.0.12" },
     { name = "jax", specifier = ">=0.10" },
     { name = "jaxtyping", specifier = ">=0.3" },
     { name = "pipekit-array", extras = ["numpy", "compat"], git = "https://github.com/jejjohnson/pipekit?subdirectory=packages%2Fpipekit-array&tag=pipekit-array-v0.3.0" },
 ]
-provides-extras = ["gridax"]
 
 [package.metadata.requires-dev]
 dev = [
