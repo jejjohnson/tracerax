@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.0](https://github.com/jejjohnson/tracerax/compare/v0.0.7...v0.1.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **analysis:** tracerax.footprint (surface, Footprint) is removed. A backward run of Langevin under integrate with Residence(cells, where=...) gives the residence; plumax divides it by N rho h_s.
+* **footprint:** tracerax.footprint (surface, Footprint) is removed. A backward run of Langevin under integrate with Residence(cells, where=...) gives the residence; plumax divides it by N rho h_s.
+* **advect:** integrate with a Deterministic step is the one way to advect, and the diffrax solve path is removed ([#74](https://github.com/jejjohnson/tracerax/issues/74))
+
+### Code Refactoring
+
+* **advect:** integrate with a Deterministic step is the one way to advect, and the diffrax solve path is removed ([#74](https://github.com/jejjohnson/tracerax/issues/74)) ([5563805](https://github.com/jejjohnson/tracerax/commit/5563805c4f6ba326899bc409eb15dc3a4ac9c101))
+* **analysis:** the trajectory scores and the dispersions go to diagnostix ([#79](https://github.com/jejjohnson/tracerax/issues/79)) ([ecf44bb](https://github.com/jejjohnson/tracerax/commit/ecf44bb610aefdc61de7e690f9922f97592bc2db))
+* **footprint:** the footprint module goes, and plumax builds it from tracerax's pieces ([#78](https://github.com/jejjohnson/tracerax/issues/78)) ([64acbbf](https://github.com/jejjohnson/tracerax/commit/64acbbfd9372fb4d7f791982f064e632cb3fdd3e))
+
 ## [0.0.7](https://github.com/jejjohnson/tracerax/compare/v0.0.6...v0.0.7) (2026-11-26)
 
 
