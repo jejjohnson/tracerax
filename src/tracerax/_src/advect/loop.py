@@ -11,12 +11,9 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from integrix.adjoint import (
-    Checkpointed,
-    Truncated,
-    checkpointed_scan,
-    truncated_scan,
-)
+from integrix.adjoint import Checkpointed, Truncated, scan_for
+from integrix.exceptions import ValidationError as IntegrixValidationError
+from integrix.march import count_steps, step_lengths
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 from tracerax._src._validate import check_count, is_concrete
@@ -33,8 +30,6 @@ __all__ = [
     "Result",
     "check_epoch",
     "integrate",
-    "n_steps_for_horizon",
-    "step_durations",
 ]
 
 
@@ -102,40 +97,6 @@ class Result(eqx.Module):
     accumulated: PyTree
     trajectory: Float[Array, "save particle axis"] | None
     offsets: Float[Array, " save"] | None
-
-
-def n_steps_for_horizon(horizon: float, step_size: float) -> int:
-    """K = ⌈T/Δt⌉, snapped to the nearest integer within 1e-9 relative.
-
-    Plain ⌈T/Δt⌉ adds a step of zero length when the quotient is an integer that
-    floating point rounds just above: 2.1 / 0.15 is 14 steps and not 15.
-
-    Examples:
-        >>> n_steps_for_horizon(2.1, 0.15), n_steps_for_horizon(122.0, 5.0)
-        (14, 25)
-        >>> n_steps_for_horizon(0.0, 5.0)
-        0
-    """
-    quotient = horizon / step_size
-    nearest = round(quotient)
-    if abs(quotient - nearest) <= 1e-9 * max(1.0, nearest):
-        # a horizon much shorter than the step is still one step
-        return nearest if horizon == 0.0 else max(nearest, 1)
-    return math.ceil(quotient)
-
-
-def step_durations(horizon: float, step_size: float, n_steps: int) -> np.ndarray:
-    """The K step lengths: Δt, and T − (K − 1) Δt for the last.
-
-    Examples:
-        >>> step_durations(12.0, 5.0, 3).tolist()
-        [5.0, 5.0, 2.0]
-    """
-    durations = np.full(n_steps, step_size, dtype=np.float64)
-    if n_steps:
-        # Δt_K = T − (K − 1) Δt
-        durations[-1] = horizon - step_size * (n_steps - 1)
-    return durations
 
 
 def _check_run(duration: Any, step_size: Any, t0: Any) -> None:
@@ -214,16 +175,10 @@ def _moving(particles: ParticleState) -> Any:
 
 def _scan(adjoint: object) -> Callable[..., Any]:
     """The scan of an adjoint, refusing one the loop does not take."""
-    if adjoint is None:
-        return jax.lax.scan
-    if isinstance(adjoint, Checkpointed):
-        return lambda f, init, xs: checkpointed_scan(f, init, xs, every=adjoint.every)
-    if isinstance(adjoint, Truncated):
-        return lambda f, init, xs: truncated_scan(f, init, xs, k=adjoint.k)
-    raise ValidationError(
-        "'adjoint' must be None, integrix.adjoint.Checkpointed or "
-        f"integrix.adjoint.Truncated, got {type(adjoint).__name__}"
-    )
+    try:
+        return scan_for(adjoint)
+    except IntegrixValidationError as error:
+        raise ValidationError(str(error)) from error
 
 
 def integrate(
@@ -330,7 +285,7 @@ def integrate(
     # --- the steps, on the host ---
     direction = math.copysign(1.0, duration) if duration != 0.0 else 1.0
     horizon = abs(float(duration))
-    n_steps = n_steps_for_horizon(horizon, step_size)
+    n_steps = count_steps(horizon, step_size)
     if save_every is not None:
         check_count(save_every, "save_every")
         if n_steps % save_every:
@@ -338,7 +293,7 @@ def integrate(
                 f"'save_every' must divide the number of steps, {n_steps}, "
                 f"got {save_every}"
             )
-    lengths = step_durations(horizon, step_size, n_steps)
+    lengths = step_lengths(horizon, step_size)
     if direction < 0.0:
         # the partial interval of the forward run is undone first
         lengths = lengths[::-1].copy()

@@ -26,7 +26,7 @@ The public API is the set of public modules below; private code lives in `src/tr
 ### Boundaries
 
 - **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix, geophysix and pipekit-array (with pipekit-ops, which it brings), and nothing else from the GeoStack at runtime. It never imports geotoolz, any other pipekit package, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
-- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix and `pipekit-array[numpy,compat]`. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.11 fixes functax v0.0.13, and any other functax fails to resolve. geophysix, pipekit-array and the `gridax` extra are uv sources by tag, which move together too: gridax v0.3.4 fixes geophysix v0.0.10, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is the `gridax` extra, imported inside the function that needs it.
+- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix and `pipekit-array[numpy,compat]`. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.12 fixes functax v0.0.13, and any other functax fails to resolve. geophysix, pipekit-array and the `gridax` extra are uv sources by tag, which move together too: gridax v0.3.4 fixes geophysix v0.0.10, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is the `gridax` extra, imported inside the function that needs it.
 - **Ownership test.** Is the state a set of positions carried forward in time, or does the analysis need the run or the cells? Then it belongs here. Scores that take arrays of positions alone (separation, skill, dispersion) are diagnostix's, in `diagnostix.trajectories`. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics, surface footprints and source inversions are plumax's; plumax builds a footprint from `Langevin`, `integrate` and `Residence`. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
 When other projects build on the package, list them here and keep their imports working through the change that moves them.
@@ -39,7 +39,7 @@ Each foundation brings a rule. Breaking one runs fine on your machine and fails 
 |---|---|---|
 | **JAX** | Everything | Traceable: static shapes, no Python control flow on traced values, no host round-trips. Nothing inside the library calls `jax.jit`: the caller jits once, at the top. |
 | **Equinox** | The state, the steps, the velocities and the accumulators as `eqx.Module`s | Arrays are always leaves; configuration is `eqx.field(static=True)`. Field checks in `__check_init__`, checks on traced values with `eqx.error_if`. |
-| **integrix** | The solvers, `checkpointed_scan` and `truncated_scan` | No Butcher tableau, checkpoint block or truncated gradient is written here. |
+| **integrix** | The solvers, `erk_step`, `scan_for` (with `checkpointed_scan` and `truncated_scan`), `count_steps` and `step_lengths` | No Butcher tableau, checkpoint block or truncated gradient is written here. |
 | **diffrax** (minor version pinned, as integrix pins it) | Its solvers' tableaux | `solver.step` inside a scan supports one AD mode only, so a step in the loop unrolls the tableau ([#18](https://github.com/jejjohnson/tracerax/issues/18)). |
 | **functax** (`functax[jax]`) | Interpolation of a gridded velocity, binning, edges and cell areas | No interpolation weight or bin index is written here, except the `searchsorted` of the nearest deposit, until [functax#168](https://github.com/jejjohnson/functax/issues/168). |
 | **pipekit-array** | `pipekit_array.arrays.safe_sqrt` | A helper about no particle is taken from it, not written here ([#46](https://github.com/jejjohnson/tracerax/issues/46)). |
@@ -65,13 +65,13 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | `jnp.histogram`, `segment_sum` into cells, a deposit, a cloud-in-cell weight | `deposit` on `Cells` (`tracerax.bin`), which keeps the mass at walls and on stretched cells; functax's `Binning` alone does not yet |
 | The cell each particle is in, as a flat index | `flat_index` (`tracerax._src.bin.cells`) |
 | A cell area or volume from edges | `Cells.volumes` (`tracerax.bin`), which is `functax.quad.cell_area` |
-| An RK4 step, a Butcher tableau | integrix's and diffrax's solvers |
+| An RK4 step, a Butcher tableau | integrix's and diffrax's solvers, stepped by `integrix.march.erk_step` |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
 | A `where` on the result of a field read at a masked particle | `stand_in` before the read and `choose` after it (`tracerax._src.advect.masks`) |
 | The time and the mean velocity at the start of a stochastic step | `mean_at_start` (`tracerax._src.advect.masks`) |
 | A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
 | A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`); for the time spent in cells, `Residence` (`tracerax.bin`), and by each particle in labelled regions, `RegionTime` (`tracerax.analysis`) |
-| `ceil(T / dt)` and a shorter last step | `n_steps_for_horizon`, `step_durations` (`tracerax._src.advect.loop`) |
+| `ceil(T / dt)` and a shorter last step | `integrix.march.count_steps`, `step_lengths` |
 | A reflection at a wall, a modulo fold | `Walls` (`tracerax.advect`) |
 | A turbulence closure, a mixing-length profile | plumax's; here it is an argument |
 | A hand-written Earth radius or a great-circle distance | `geophysix.earth` |

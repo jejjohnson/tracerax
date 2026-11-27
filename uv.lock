@@ -805,8 +805,8 @@ wheels = [
 
 [[package]]
 name = "integrix"
-version = "0.0.11"
-source = { git = "https://github.com/jejjohnson/integrix?rev=v0.0.11#a3a354351d2d01184cbadc7ca4d6d39711eecd1c" }
+version = "0.0.12"
+source = { git = "https://github.com/jejjohnson/integrix?rev=v0.0.12#4ce25e7b51e22e52db6637e5ae80153d8c110162" }
 dependencies = [
     { name = "diffrax" },
     { name = "einx" },
@@ -2710,7 +2710,7 @@ requires-dist = [
     { name = "functax", extras = ["jax"], git = "https://github.com/jejjohnson/functax?rev=v0.0.13" },
     { name = "geophysix", git = "https://github.com/jejjohnson/geophysix?tag=v0.0.10" },
     { name = "gridax", marker = "python_full_version < '3.14' and extra == 'gridax'", git = "https://github.com/jejjohnson/gridax?subdirectory=packages%2Fgridax&tag=gridax-v0.3.4" },
-    { name = "integrix", git = "https://github.com/jejjohnson/integrix?rev=v0.0.11" },
+    { name = "integrix", git = "https://github.com/jejjohnson/integrix?rev=v0.0.12" },
     { name = "jax", specifier = ">=0.10" },
     { name = "jaxtyping", specifier = ">=0.3" },
     { name = "pipekit-array", extras = ["numpy", "compat"], git = "https://github.com/jejjohnson/pipekit?subdirectory=packages%2Fpipekit-array&tag=pipekit-array-v0.3.0" },

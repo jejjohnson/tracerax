@@ -5,6 +5,7 @@ from __future__ import annotations
 import diffrax as dfx
 import equinox as eqx
 from geophysix.earth import SPHERE, Ellipsoid
+from integrix.march import erk_step
 from jaxtyping import Array, Float
 
 from tracerax._src._sphere import (
@@ -15,11 +16,7 @@ from tracerax._src._sphere import (
     to_lonlat,
     to_unit,
 )
-from tracerax._src.advect.deterministic import (
-    RK4,
-    check_explicit,
-    runge_kutta,
-)
+from tracerax._src.advect.deterministic import RK4, check_explicit
 from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.uniform import Velocity
@@ -133,7 +130,8 @@ class DeterministicSphere(eqx.Module):
             return angular_rate(self.velocity, time, vector, self.earth.semi_major)
 
         initial = to_unit(stand_in(state.position, moves))
-        vector = runge_kutta(self.solver, rate, initial, start, duration, direction)
+        # h = d δ, one per particle
+        vector = erk_step(self.solver, rate, initial, start, direction * duration)
         # r ← r / |r|, which the angles do not depend on
         position = choose(moves, to_lonlat(vector), state.position)
         return eqx.tree_at(lambda particles: particles.position, state, position)
@@ -196,7 +194,8 @@ class UnitVectorStep(eqx.Module):
             return angular_rate(self.velocity, time, vector, self.earth.semi_major)
 
         initial = stand_in(state.position, moves)
-        vector = runge_kutta(self.solver, rate, initial, start, duration, direction)
+        # h = d δ, one per particle
+        vector = erk_step(self.solver, rate, initial, start, direction * duration)
         # r ← r / |r|
         position = choose(moves, normalise(vector), state.position)
         return eqx.tree_at(lambda particles: particles.position, state, position)
