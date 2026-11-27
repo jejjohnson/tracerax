@@ -9,11 +9,21 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
+from functax.geometry import Points
+from functax.interp import Binning
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
 
 from tracerax._src._validate import check_count, is_concrete
-from tracerax._src.bin.cells import Cells, edges_in, flat_index, position_columns
+from tracerax._src.advect.masks import stand_in
+from tracerax._src.bin.cells import (
+    Cells,
+    cell_grid,
+    edges_in,
+    first_centre,
+    host_axes,
+    position_columns,
+)
 from tracerax._src.particles.state import ParticleState
 from tracerax.exceptions import ValidationError
 
@@ -105,11 +115,17 @@ class Regions(eqx.Module):
         """
         columns = position[:, position_columns(self.cells)]
         inside = self.cells.contains(columns)
+        dtype = columns.dtype
+        edges = edges_in(self.cells, dtype)
         # a particle outside has no cell: it is read in the first one
-        cell = jnp.where(
-            inside, flat_index(edges_in(self.cells, columns.dtype), columns), 0
-        )
-        return jnp.where(inside, jnp.ravel(self.labels)[cell], -1)
+        columns = stand_in(columns, inside, first_centre(edges, dtype))
+        with host_axes(edges):
+            grid = cell_grid(edges)
+        # l_p = (H l)_p: the adjoint of a sum is the read of the cell between edges
+        plan = Binning("sum").plan(Points(columns), grid)
+        read = plan.adjoint(jnp.ravel(self.labels).astype(dtype))
+        label = jnp.round(read).astype(self.labels.dtype)
+        return jnp.where(inside, label, -1)
 
 
 class RegionTime(eqx.Module):

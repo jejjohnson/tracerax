@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 from functax.geometry import Axis, RectilinearGrid
 from functax.quad import cell_area
-from jaxtyping import Array, Bool, Float, Int
+from jaxtyping import Array, Bool, Float
 
 from tracerax._src._validate import is_concrete
 from tracerax.exceptions import ValidationError
@@ -20,10 +20,11 @@ from tracerax.exceptions import ValidationError
 __all__ = [
     "Cells",
     "cell_centres",
+    "cell_grid",
     "cells_in",
     "check_columns",
     "edges_in",
-    "flat_index",
+    "first_centre",
     "host_axes",
     "position_columns",
 ]
@@ -144,9 +145,9 @@ class Cells(eqx.Module):
             One value per cell, in metres to the power of the number of axes.
         """
         with host_axes(self.edges):
-            axes = [Axis(cell_centres(edge), edges=edge) for edge in self.edges]
+            grid = cell_grid(self.edges)
             # |C_j| = ∏_d (e_{d,j+1} − e_{d,j})
-            return jnp.asarray(cell_area(RectilinearGrid(axes)).weights)
+            return jnp.asarray(cell_area(grid).weights)
 
     def contains(
         self, position: Float[Array, "particle axis"]
@@ -222,19 +223,18 @@ def cells_in(cells: Cells, dtype: Any) -> Cells:
         return Cells(edges)
 
 
-def flat_index(
-    edges: tuple[Any, ...], position: Float[Array, "particle axis"]
-) -> Int[Array, " particle"]:
-    """The row-major index of the cell of each particle inside the edges.
+def cell_grid(edges: tuple[Any, ...]) -> RectilinearGrid:
+    """The functax grid of the cells: their centres, with the edges explicit.
 
-    i = max{j : e_j ≤ x} on each axis. It means nothing for a particle outside.
+    Build it inside `host_axes` of the edges, so that concrete edges stay off the
+    trace.
     """
-    flat = jnp.zeros(position.shape[0], dtype=int)
-    for index, edge in enumerate(edges):
-        # i = max{j : e_j ≤ x}
-        cell = jnp.searchsorted(edge, position[:, index], side="right") - 1
-        flat = flat * (edge.shape[0] - 1) + cell
-    return flat
+    return RectilinearGrid([Axis(cell_centres(edge), edges=edge) for edge in edges])
+
+
+def first_centre(edges: tuple[Any, ...], dtype: Any) -> Float[Array, " axis"]:
+    """The centre of the first cell, where a particle outside the cells is read."""
+    return jnp.asarray([cell_centres(edge[:2])[0] for edge in edges], dtype=dtype)
 
 
 def position_columns(cells: Cells) -> slice:
