@@ -7,7 +7,7 @@ The house style (Python, maths notation, prose, pseudocode, reports) comes from 
 
 ## What this repo is
 
-tracerax is the GeoStack's library of Lagrangian particles, in JAX: it carries a set of positions forward (or backward) in time, and analyses such positions. It moves parcels deterministically, with turbulence or with a diffusivity, deposits them in cells, and turns backward runs into surface footprints. It is a GeoNumerics library, above geophysix and gridax.
+tracerax is the GeoStack's library of Lagrangian particles, in JAX: it carries a set of positions forward (or backward) in time, and analyses such positions. It moves parcels deterministically, with turbulence or with a diffusivity, deposits them in cells, and sums what they leave there, forward or backward. It is a GeoNumerics library, above geophysix and gridax.
 
 People build on a package like this, so **the package is a library of primitives**: new code composes what is here, and anything genuinely new lands where the next person will find and reuse it.
 
@@ -21,14 +21,13 @@ The public API is the set of public modules below; private code lives in `src/tr
 | `velocity` | Velocities at particles: uniform, gridded through functax, weighted sums | now |
 | `advect` | The deterministic step, on the plane and on the sphere, the Langevin, random-displacement and inertial steps, the `TurbulenceModel` and `Diffusivity` protocols, the walls, the domain, and the loop that runs any step | now |
 | `bin` | Cells from edges, deposits, the residence accumulator, concentrations | now |
-| `footprint` | Surface footprints from backward runs | now |
 | `analysis` | Residence times and connectivity of labelled regions, FTLE, dispersion, trajectory skill | now |
 
 ### Boundaries
 
 - **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix, geophysix and pipekit-array (with pipekit-ops, which it brings), and nothing else from the GeoStack at runtime. It never imports geotoolz, any other pipekit package, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
 - **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix and `pipekit-array[numpy,compat]`. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.11 fixes functax v0.0.13, and any other functax fails to resolve. geophysix, pipekit-array and the `gridax` extra are uv sources by tag, which move together too: gridax v0.3.4 fixes geophysix v0.0.10, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is the `gridax` extra, imported inside the function that needs it.
-- **Ownership test.** Is the state a set of positions carried forward in time, or does it analyse such positions? Then it belongs here. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics and source inversions are plumax's. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
+- **Ownership test.** Is the state a set of positions carried forward in time, or does it analyse such positions? Then it belongs here. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics, surface footprints and source inversions are plumax's; plumax builds a footprint from `Langevin`, `integrate` and `Residence`. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
 When other projects build on the package, list them here and keep their imports working through the change that moves them.
 
@@ -148,7 +147,7 @@ Each function brings four tests, as `add-particle-function` lays out, with the h
 
 A result that is a sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key. `tests/_closures.py` holds the two turbulence closures.
 
-`tests/_reference.py` holds the reference runs: a Langevin step, a trajectory, the counts, the residence, the footprint and a gridded wind, in NumPy and SciPy, with none of tracerax's code. They reproduced plumax's own values at `96449d2` to 1e-12, before plumax took its particles from tracerax ([plumax#410](https://github.com/jejjohnson/plumax/issues/410)), so a change of those numbers changes plumax's.
+`tests/_reference.py` holds the reference runs: a Langevin step, a trajectory, the counts, the residence, a backward residence (the footprint's) and a gridded wind, in NumPy and SciPy, with none of tracerax's code. They reproduced plumax's own values at `96449d2` to 1e-12, before plumax took its particles from tracerax ([plumax#410](https://github.com/jejjohnson/plumax/issues/410)), so a change of those numbers changes plumax's.
 
 ## Recipes
 

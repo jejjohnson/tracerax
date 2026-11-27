@@ -22,7 +22,6 @@ SUBMODULES = [
     "analysis",
     "bin",
     "exceptions",
-    "footprint",
     "particles",
     "velocity",
 ]

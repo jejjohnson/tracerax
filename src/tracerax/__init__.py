@@ -14,7 +14,6 @@ Each is created by its first feature issue, so the later ones may not be here ye
 | `tracerax.velocity` | velocities at particles, uniform, gridded or summed |
 | `tracerax.advect` | deterministic, turbulent, diffusing and inertial steps, the loop |
 | `tracerax.bin` | cells, deposits, residence, concentrations |
-| `tracerax.footprint` | surface footprints from backward runs |
 | `tracerax.analysis` | trajectory diagnostics, on the plane and on the sphere |
 """
 

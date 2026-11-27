@@ -105,7 +105,7 @@ Every issue carries exactly one `type:*`, one or more `area:*`, one `wave:*` and
 
 | Work type | Labels |
 |---|---|
-| A function in a public module (`particles`, `velocity`, `advect`, `bin`, `footprint`, `analysis`) | `type:feature`, `area:<module>`, `wave:N`, `priority:p1` |
+| A function in a public module (`particles`, `velocity`, `advect`, `bin`, `analysis`) | `type:feature`, `area:<module>`, `wave:N`, `priority:p1` |
 | Test coverage | `type:feature`, `area:testing`, `wave:N` |
 | Notebook / docs page | `type:docs`, `area:docs`, `wave:N` |
 | Design / ADR | `type:design`, the module area (or `area:engineering`), `wave:N` |
