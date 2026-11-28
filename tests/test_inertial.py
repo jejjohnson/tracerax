@@ -12,9 +12,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _oracles import SphereRotation
 from geophysix.earth import SPHERE, WGS84, sphere
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_traces,
+)
 
 from tracerax import ValidationError
 from tracerax._src.advect.inertial import _phi

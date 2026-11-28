@@ -13,9 +13,10 @@ from functax.geometry import Points
 from functax.interp import Binning, TransposedStencil
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
+from pipekit_array.arrays import check_values, divide_or_nan, stand_in
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import check_count, is_concrete
-from tracerax._src.advect.masks import stand_in
+from tracerax._src._validate import check_count
 from tracerax._src.bin.cells import (
     Cells,
     cell_grid,
@@ -94,7 +95,7 @@ class Regions(eqx.Module):
         else:
             array = array.astype(int)
             outside = (array < -1) | (array >= n_regions)
-            array = eqx.error_if(array, outside, message)
+            array = check_values(array, outside, message, error=ValidationError)
         self.cells = cells
         # a dtype without a sign has no −1 to give outside the cells
         self.labels = array.astype(int)
@@ -118,7 +119,7 @@ class Regions(eqx.Module):
         dtype = columns.dtype
         edges = edges_in(self.cells, dtype)
         # a particle outside has no cell: it is read in the first one
-        columns = stand_in(columns, inside, first_centre(edges, dtype))
+        columns = stand_in(columns, inside, jnp, reference=first_centre(edges, dtype))
         with host_axes(edges):
             grid = cell_grid(edges)
             # the nearest plan has one tap per particle: the cell between the edges
@@ -221,11 +222,8 @@ def _fractions(
     # N_i
     number = einx.sum("[particle] region", released)
     pairs = einx.dot("[particle] i, [particle] j -> i j", released, reached)
-    some = number > 0.0
-    # C_ij = (1/N_i) ∑_{p ∈ i} 1[p reached j]
-    safe = jnp.where(some, number, 1.0)
-    fraction = einx.divide("i j, i -> i j", pairs, safe)
-    return einx.where("i, i j, -> i j", some, fraction, jnp.nan)
+    # C_ij = (1/N_i) ∑_{p ∈ i} 1[p reached j], NaN for a region with no particle
+    return divide_or_nan(pairs, einx.rearrange("i -> i 1", number), jnp)
 
 
 def _released(

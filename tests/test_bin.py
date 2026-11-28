@@ -11,15 +11,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
-from _harness import (
+from _reference import CLOSURES, reference_values
+from hypothesis import given, strategies as st
+from integrix.adjoint import Checkpointed
+from pipekit_array.testing import (
     assert_adjoint,
     assert_grad_matches_fd,
     assert_matches_oracle,
     assert_traces,
 )
-from _reference import CLOSURES, reference_values
-from hypothesis import given, strategies as st
-from integrix.adjoint import Checkpointed
 from scipy.interpolate import RegularGridInterpolator
 
 from tracerax import ValidationError
@@ -239,12 +239,15 @@ class TestDeposit:
             for unit in np.eye(n_cells)
         ]
         read = jnp.asarray(np.stack(rows, axis=1))
+        # pipekit's dot-product test draws NumPy vectors; deposit takes JAX arrays
         assert_adjoint(
             lambda field: read @ field,
-            lambda weight: deposit(cells, position, weight, kind=kind).ravel(),
+            lambda weight: deposit(
+                cells, position, jnp.asarray(weight), kind=kind
+            ).ravel(),
             n_cells,
             len(position),
-            key=jax.random.key(1),
+            seed=1,
             rtol=1e-12,
         )
 

@@ -8,8 +8,8 @@ import jax.numpy as jnp
 from functax.geometry import Points
 from functax.interp import Binning, Policies
 from jaxtyping import Array, Float
+from pipekit_array.arrays import stand_in
 
-from tracerax._src.advect.masks import stand_in
 from tracerax._src.bin.cells import (
     Cells,
     cell_grid,
@@ -113,7 +113,7 @@ def deposit(
     inside = cells.contains(position)
     kept = jnp.where(inside, weight.astype(dtype), jnp.zeros((), dtype))
     # what is outside may be NaN: it is read in the first cell, with weight zero
-    position = stand_in(position, inside, first_centre(edges, dtype))
+    position = stand_in(position, inside, jnp, reference=first_centre(edges, dtype))
     # the plan builds axes of its own from the edges, which stay off the trace too
     with host_axes(edges):
         grid = cell_grid(edges)

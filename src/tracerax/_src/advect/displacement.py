@@ -6,10 +6,10 @@ import einx
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
-from pipekit_array.arrays import safe_sqrt
+from pipekit_array.arrays import safe_sqrt, stand_in
 
 from tracerax._src.advect.diffusivity import Diffusivity
-from tracerax._src.advect.masks import choose, mean_at_start, stand_in
+from tracerax._src.advect.masks import choose, mean_at_start
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.derivatives import tangents, unit_columns
@@ -108,7 +108,7 @@ def displacement_step(
             f"'walls' reflect the third position column, and 'state' has {dim}"
         )
     moves = state.active & (duration > 0.0)
-    position = stand_in(state.position, moves)
+    position = stand_in(state.position, moves, jnp)
     # a particle that waits keeps finite gradients
     elapsed = jnp.where(moves, duration, 1.0)
     waiting = jnp.zeros((), dtype=dtype)

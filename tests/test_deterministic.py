@@ -11,8 +11,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _oracles import DoubleGyre, SolidBodyRotation, uniform_wind_position
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_traces,
+)
 
 from tracerax import ValidationError
 from tracerax.advect import Box, Deterministic, integrate

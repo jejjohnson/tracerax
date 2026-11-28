@@ -25,8 +25,8 @@ The public API is the set of public modules below; private code lives in `src/tr
 
 ### Boundaries
 
-- **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix, geophysix and pipekit-array (with pipekit-ops, which it brings), and nothing else from the GeoStack at runtime. It never imports geotoolz, any other pipekit package, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
-- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix and `pipekit-array[numpy,compat]`. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.13 fixes functax v0.0.15, and any other functax fails to resolve. geophysix and pipekit-array are uv sources by tag, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is never imported: a caller with a gridax grid passes its staggered coordinates to `cgrid_grids`.
+- **Layer rule.** tracerax is a GeoNumerics library, above geophysix and gridax. It imports functax, integrix, geophysix, pipekit-array and pipekit-ops, and nothing else from the GeoStack at runtime. It never imports geotoolz, any other pipekit package, gaussx, kernellib or any GeoModels library; plumax, sesmax-ocean and xrops import it. `tests/test_import_isolation.py` checks this.
+- **Runtime dependencies**: JAX, Equinox, jaxtyping, einx, diffrax, `functax[jax]`, integrix, geophysix, `pipekit-array[numpy,compat]` and pipekit-ops. functax and integrix are not on PyPI, so they are pinned to git tags, and the two move together: integrix v0.0.13 fixes functax v0.0.15, and any other functax fails to resolve. geophysix, pipekit-array and pipekit-ops are uv sources by tag, and every package of the stack pins pipekit to `pipekit-array-v0.3.0`. gridax is never imported: a caller with a gridax grid passes its staggered coordinates to `cgrid_grids`.
 - **Ownership test.** Is the state a set of positions carried forward in time, or does the analysis need the run or the cells? Then it belongs here. Scores that take arrays of positions alone (separation, skill, dispersion) are diagnostix's, in `diagnostix.trajectories`. A scheme that discards its departure points after each step is integrix's. Turbulence closures, plume physics, surface footprints and source inversions are plumax's; plumax builds a footprint from `Langevin`, `integrate` and `Residence`. Interpolation, binning and quadrature are functax's. Labels, CF and dask are xrops'. Ensemble scores are not tracerax's.
 
 When other projects build on the package, list them here and keep their imports working through the change that moves them.
@@ -42,7 +42,7 @@ Each foundation brings a rule. Breaking one runs fine on your machine and fails 
 | **integrix** | The solvers, `erk_step`, `scan_for` (with `checkpointed_scan` and `truncated_scan`), `count_steps` and `step_lengths` | No Butcher tableau, checkpoint block or truncated gradient is written here. |
 | **diffrax** (minor version pinned, as integrix pins it) | Its solvers' tableaux | `solver.step` inside a scan supports one AD mode only, so a step in the loop unrolls the tableau ([#18](https://github.com/jejjohnson/tracerax/issues/18)). |
 | **functax** (`functax[jax]`) | Interpolation of a gridded velocity, binning, edges and cell areas | No interpolation weight or bin index is written here: a deposit, and the cell of a particle, are a `Binning` plan on the grid of the cells. |
-| **pipekit-array** | `pipekit_array.arrays.safe_sqrt` | A helper about no particle is taken from it, not written here ([#46](https://github.com/jejjohnson/tracerax/issues/46)). |
+| **pipekit-array** and **pipekit-ops** | `safe_sqrt`, `stand_in`, `check_values` and `divide_or_nan` (`pipekit_array.arrays`), the test checks (`pipekit_array.testing`), `is_concrete` (`pipekit_ops`) | A helper about no particle is taken from them, not written here ([#46](https://github.com/jejjohnson/tracerax/issues/46)). |
 | **einx** | Reductions, contractions, broadcasts and rearranges | No `axis=`, `.T`, `reshape` or `[:, None]` on dense arrays. |
 | **jaxtyping** | Array annotations | Named dims from the shared vocabulary ("House style"); checked at runtime in tests through the import hook in `tests/conftest.py`. |
 | **SciPy, hypothesis, beartype** (the `test` group) | Reference results, property tests, the runtime type checker | Never imported by `src/`. plumax is never a test dependency, because plumax imports tracerax. |
@@ -60,13 +60,17 @@ Before writing a helper, a step, an interpolation or a formula, find out whether
 | You are about to write… | Use instead |
 |---|---|
 | A bilinear or trilinear read, `jnp.searchsorted` on a grid axis, `map_coordinates` | functax's `Linear().fit(RectilinearGrid(...), ...)` with `Policies`; for one field per position column, `fit_components` and `read_components` (`tracerax._src.velocity.gridded`) |
-| A check of a count, of the position columns, or of whether a value is traced | `check_count`, `check_dimension`, `is_concrete` (`tracerax._src._validate`) |
+| A check of a count, of the position columns, or of whether a value is traced | `check_count`, `check_dimension` (`tracerax._src._validate`), `pipekit_ops.is_concrete` |
+| An integer promoted to the default float | `as_floating` (`tracerax._src._validate`) |
+| `eqx.error_if` beside an eager check of the same values | `pipekit_array.arrays.check_values(..., error=ValidationError)`, with the condition computed in NumPy when the array is concrete, so that `jit` adds no host callback |
+| A division that gives NaN where the denominator is 0 | `pipekit_array.arrays.divide_or_nan` |
+| f = 2Ω sin φ written out | `geophysix.rotation.coriolis` |
 | `jnp.histogram`, `segment_sum` into cells, a deposit, a cloud-in-cell weight | `deposit` on `Cells` (`tracerax.bin`), one functax `Binning` plan that keeps the mass at walls and on stretched cells |
 | The cell each particle is in, as a flat index | the one tap per particle of a nearest `Binning` plan on `cell_grid` (`tracerax._src.bin.cells`, `plan.read.stencil.indices`), as `Regions.at` reads its labels |
 | A cell area or volume from edges | `Cells.volumes` (`tracerax.bin`), which is `functax.quad.cell_area` |
 | An RK4 step, a Butcher tableau | integrix's and diffrax's solvers, stepped by `integrix.march.erk_step` |
 | `jax.checkpoint` over blocks of a scan, a `stop_gradient` on the carry | `integrix.adjoint.checkpointed_scan`, `truncated_scan` |
-| A `where` on the result of a field read at a masked particle | `stand_in` before the read and `choose` after it (`tracerax._src.advect.masks`) |
+| A `where` on the result of a field read at a masked particle | `pipekit_array.arrays.stand_in` before the read and `choose` (`tracerax._src.advect.masks`) after it |
 | The time and the mean velocity at the start of a stochastic step | `mean_at_start` (`tracerax._src.advect.masks`) |
 | A second loop for a new kind of particle | a `ParticleStep`; the one loop, `tracerax.advect.integrate`, runs any of them |
 | A sum over a run, a histogram inside a scan | an `Accumulator` (`tracerax.advect`); for the time spent in cells, `Residence` (`tracerax.bin`), and by each particle in labelled regions, `RegionTime` (`tracerax.analysis`) |
@@ -131,20 +135,20 @@ Most rules here are tests, so CI tells you when one breaks. Read a test's docstr
 | `tests/test_build_docs.py` | The two-tool docs pipeline: inventory parsing, anchor repair, link checking, the inventory port and the absolute nav URL in `docs/myst.yml`, the files copied to the site root (`ROOT_FILES`) |
 | `tests/conftest.py` | `jax_enable_x64` is on for the whole suite; jaxtyping and beartype check every annotated array; hypothesis has no deadline, because the first example compiles |
 | `tests/test_import_isolation.py` | Importing every module loads no stack library but functax, integrix and their own dependencies |
-| `tests/test_harness.py` | The harness itself: one toy step passes every check, each check fails on a wrong function, each closed form agrees with an independent evaluation, and the reference runs are what they say |
+| `tests/test_harness.py` | Each closed form agrees with an independent evaluation, and the reference runs are what they say; the checks themselves are tested in pipekit-array |
 | `uv sync --locked` in every test job | `uv.lock` matches the pins in `pyproject.toml` |
 | `[tool.coverage.report] fail_under = 90` | Coverage of `src/tracerax` in every coverage-enabled run (CI, `uv run poe test-cov`) |
 | `strict_markers = true` | Only the registered markers (`slow`, `integration`) exist |
 | ruff (`select = E, F, I, UP, B, SIM, RUF`), ty | Lint (the whole repo), format, types on `src/tracerax` and `scripts` |
 
-Each function brings four tests, as `add-particle-function` lays out, with the helpers of `tests/` ([#15](https://github.com/jejjohnson/tracerax/issues/15)):
+Each function brings four tests, as `add-particle-function` lays out, with the checks of `pipekit_array.testing` and the oracles of `tests/` ([#15](https://github.com/jejjohnson/tracerax/issues/15), [#46](https://github.com/jejjohnson/tracerax/issues/46)):
 
-1. **Oracle**: a closed form (`tests/_oracles.py`) or a run written out in NumPy (`tests/_reference.py`), at a stated tolerance, in float64 (`assert_matches_oracle`). A linear map and its transpose also get the dot-product test (`assert_adjoint`).
+1. **Oracle**: a closed form (`tests/_oracles.py`) or a run written out in NumPy (`tests/_reference.py`), at a stated tolerance, in float64 (`assert_matches_oracle`). A linear map and its transpose also get the dot-product test (`assert_adjoint`, with a `seed`).
 2. **Transforms**: eager, `jit` and `vmap` over a batch of one agree (`assert_traces`).
 3. **Gradients**: autodiff against central differences at a fixed key, where the function is smooth (`assert_grad_matches_fd`).
 4. **Masks**: an inactive or unreleased particle changes nothing and stays finite.
 
-A result that is a sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`tests/_sampling.py`), with a constant key. `tests/_closures.py` holds the two turbulence closures.
+A result that is a sample goes through `assert_uniform`, `assert_mean` or `assert_variance` (`pipekit_array.testing`), with a constant key. `tests/_closures.py` holds the two turbulence closures.
 
 `tests/_reference.py` holds the reference runs: a Langevin step, a trajectory, the counts, the residence, a backward residence (the footprint's) and a gridded wind, in NumPy and SciPy, with none of tracerax's code. They reproduced plumax's own values at `96449d2` to 1e-12, before plumax took its particles from tracerax ([plumax#410](https://github.com/jejjohnson/plumax/issues/410)), so a change of those numbers changes plumax's.
 

@@ -13,6 +13,8 @@ import numpy as np
 from functax.geometry import enu_basis
 from geophysix.earth import Ellipsoid
 from jaxtyping import Array, Float
+from pipekit_array.arrays import stand_in
+from pipekit_ops import is_concrete
 
 from tracerax._src._sphere import (
     check_sphere,
@@ -24,11 +26,9 @@ from tracerax._src._validate import (
     as_floating,
     check_count,
     check_dimension,
-    is_concrete,
 )
 from tracerax._src.advect.deterministic import RK4, Deterministic, check_explicit
 from tracerax._src.advect.loop import check_epoch, integrate
-from tracerax._src.advect.masks import stand_in
 from tracerax._src.advect.sphere import UnitVectorStep
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.particles.step import ParticleStep
@@ -154,7 +154,10 @@ def ftle(
     given = einx.all("seed [axis]", jnp.isfinite(seeds))
     origin = jnp.zeros(dim, seeds.dtype)
     seeds = stand_in(
-        seeds, given, jnp.where(given.any(), seeds[jnp.argmax(given)], origin)
+        seeds,
+        given,
+        jnp,
+        reference=jnp.where(given.any(), seeds[jnp.argmax(given)], origin),
     )
     dtype = seeds.dtype
     window = duration / n_windows

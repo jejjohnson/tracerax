@@ -13,9 +13,10 @@ import jax
 import jax.numpy as jnp
 import pytest
 from _closures import Homogeneous
-from _harness import assert_matches_oracle
+from pipekit_array.arrays import stand_in
+from pipekit_array.testing import assert_matches_oracle
 
-from tracerax._src.advect.masks import choose, stand_in
+from tracerax._src.advect.masks import choose
 from tracerax.advect import (
     Box,
     ConstantDiffusivity,
@@ -190,12 +191,12 @@ class TestHelpers:
     def test_stand_in_reads_the_first_in_the_mask(self) -> None:
         position = jnp.arange(6.0).reshape(3, 2)
         mask = jnp.array([False, True, False])
-        assert stand_in(position, mask).tolist() == [[2.0, 3.0]] * 3
-        given = stand_in(position, mask, jnp.array([9.0, 9.0]))
+        assert stand_in(position, mask, jnp).tolist() == [[2.0, 3.0]] * 3
+        given = stand_in(position, mask, jnp, reference=jnp.array([9.0, 9.0]))
         assert given.tolist() == [[9.0, 9.0], [2.0, 3.0], [9.0, 9.0]]
 
     def test_no_gradient_reaches_the_reference(self) -> None:
         position = jnp.arange(6.0).reshape(3, 2)
         mask = jnp.array([False, True, False])
-        gradient = jax.grad(lambda x: jnp.sum(stand_in(x, mask)))(position)
+        gradient = jax.grad(lambda x: jnp.sum(stand_in(x, mask, jnp)))(position)
         assert gradient.tolist() == [[0.0, 0.0], [1.0, 1.0], [0.0, 0.0]]

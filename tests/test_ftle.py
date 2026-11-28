@@ -11,11 +11,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _oracles import DoubleGyre, SphereRotation
 from functax.geometry import Axis, RectilinearGrid
 from functax.interp import Cubic, Linear
 from geophysix.earth import SPHERE, WGS84
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_traces,
+)
 
 from tracerax import ValidationError
 from tracerax.advect import Deterministic, integrate

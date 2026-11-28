@@ -2651,6 +2651,7 @@ dependencies = [
     { name = "jax" },
     { name = "jaxtyping" },
     { name = "pipekit-array", extra = ["compat", "numpy"] },
+    { name = "pipekit-ops" },
 ]
 
 [package.dev-dependencies]
@@ -2695,6 +2696,7 @@ requires-dist = [
     { name = "jax", specifier = ">=0.10" },
     { name = "jaxtyping", specifier = ">=0.3" },
     { name = "pipekit-array", extras = ["numpy", "compat"], git = "https://github.com/jejjohnson/pipekit?subdirectory=packages%2Fpipekit-array&tag=pipekit-array-v0.3.0" },
+    { name = "pipekit-ops", git = "https://github.com/jejjohnson/pipekit?subdirectory=packages%2Fpipekit-ops&tag=pipekit-array-v0.3.0" },
 ]
 
 [package.metadata.requires-dev]

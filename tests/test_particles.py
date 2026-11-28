@@ -8,10 +8,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _reference import reference_values
-from _sampling import assert_mean, assert_uniform
 from hypothesis import given, settings, strategies as st
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_mean,
+    assert_traces,
+    assert_uniform,
+)
 
 from tracerax import ValidationError
 from tracerax._src.particles.seed import _corner

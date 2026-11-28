@@ -8,16 +8,19 @@ from typing import Any
 
 import einx
 import equinox as eqx
+import geophysix.rotation
 import jax
 import jax.numpy as jnp
 import numpy as np
 from geophysix.earth import Ellipsoid
 from jax.typing import ArrayLike
 from jaxtyping import Array, Complex, Float
+from pipekit_array.arrays import check_values, stand_in
+from pipekit_ops import is_concrete
 
 from tracerax._src._sphere import check_lonlat, check_sphere
-from tracerax._src._validate import as_floating, is_concrete
-from tracerax._src.advect.masks import choose, stand_in
+from tracerax._src._validate import as_floating
+from tracerax._src.advect.masks import choose
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.derivatives import Derivatives, velocity_derivatives
 from tracerax._src.velocity.uniform import Velocity
@@ -76,12 +79,10 @@ def _parameter(
         array = as_floating(value)
         if array.shape != ():
             raise ValidationError(f"'{name}' must be a scalar, got shape {array.shape}")
-        if not is_concrete(array):
-            return eqx.error_if(array, ~inside(array), message)
-        # on the host, which a trace around a constant does not reach
-        if not bool(inside(np.asarray(array))):
-            raise ValidationError(f"{message}, got {float(array)}")
-        return array
+        # on the host when concrete, which a trace around a constant does not reach
+        xp = np if is_concrete(array) else jnp
+        outside = ~inside(xp.asarray(array))
+        return check_values(array, outside, message, error=ValidationError)
 
     return convert
 
@@ -206,8 +207,7 @@ class SlowManifold(eqx.Module):
         else:
             assert self.earth is not None
             # f = 2Ω sin φ
-            rate = 2.0 * self.earth.rotation_rate
-            coriolis = rate * jnp.sin(jnp.deg2rad(position[:, 1]))
+            coriolis = geophysix.rotation.coriolis(position[:, 1], earth=self.earth)
 
         def at(velocity: Velocity) -> Derivatives:
             return velocity_derivatives(velocity, times, position, earth=self.earth)
@@ -356,7 +356,9 @@ class Inertial(eqx.Module):
         dtype = state.position.dtype
         # max(t_r, t₀)
         begin = jnp.maximum(state.release_time.astype(dtype), jnp.asarray(t0, dtype))
-        velocity = self.slow_manifold(begin, stand_in(state.position, state.active))
+        velocity = self.slow_manifold(
+            begin, stand_in(state.position, state.active, jnp)
+        )
         velocity = choose(state.active, velocity, state.velocity)
         return eqx.tree_at(lambda particles: particles.velocity, state, velocity)
 
@@ -424,8 +426,8 @@ class Inertial(eqx.Module):
             )
         _check_two_columns(state.position, "state.position")
         moves = state.active & (duration > 0.0)
-        position = stand_in(state.position, moves)
-        velocity = stand_in(state.velocity, moves)
+        position = stand_in(state.position, moves, jnp)
+        velocity = stand_in(state.velocity, moves, jnp)
 
         forcing, rate = self._coefficients(start, position)
         half, _ = _exact_step(position, velocity, forcing, rate, 0.5 * duration)

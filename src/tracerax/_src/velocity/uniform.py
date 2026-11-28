@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
-from tracerax._src._validate import check_dimension
+from tracerax._src._validate import as_floating, check_dimension
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError
 
@@ -85,8 +85,7 @@ def uniform(value: Float[ArrayLike, " axis"]) -> Velocity:
         >>> bool(jnp.allclose(wind(0.0, jnp.zeros((2, 2))), jnp.array([3.0, -1.0])))
         True
     """
-    velocity = jnp.asarray(value)
-    velocity = velocity.astype(jnp.result_type(velocity, float))
+    velocity = as_floating(value)
     check_dimension(velocity.shape, "value")
     if velocity.ndim != 1:
         raise ValidationError(

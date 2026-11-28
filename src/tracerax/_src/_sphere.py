@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import einx
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 from functax.geometry import lonlat_to_unit, tangent_to_cartesian, unit_to_lonlat
 from geophysix.earth import Ellipsoid
 from jaxtyping import Array, Bool, Float
+from pipekit_array.arrays import check_values
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import is_concrete
 from tracerax._src.velocity.uniform import Velocity
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError
@@ -96,7 +96,8 @@ def checked_lonlat(
     beyond = jnp.abs(position[..., 1]) > 90.0
     if active is not None:
         beyond = beyond & active
-    return eqx.error_if(position, beyond, f"'{name}' {_LATITUDES}")
+    message = f"'{name}' {_LATITUDES}"
+    return check_values(position, beyond, message, error=ValidationError)
 
 
 def to_unit(lonlat: Float[Array, "... 2"]) -> Float[Array, "... 3"]:
