@@ -111,6 +111,14 @@ class TestRegions:
             with pytest.raises(RuntimeError, match="from −1 to 2"):
                 at(LABELS.at[0, 0].set(wrong))
 
+    def test_concrete_labels_add_no_callback_under_jit(self) -> None:
+        # a jnp comparison of a concrete array is traced under jit, and its check
+        # would be a host callback; the labels are compared on the host instead
+        def labelled(scale: jax.Array) -> jax.Array:
+            return scale * Regions(CELLS, LABELS, n_regions=3).labels.sum()
+
+        assert "callback" not in str(jax.make_jaxpr(labelled)(1.0))
+
     def test_float32_positions(self) -> None:
         position = _scattered(100).astype(jnp.float32)
         assert_matches_oracle(REGIONS.at(position), _label_by_hand(position), rtol=0.0)

@@ -13,7 +13,7 @@ from jax.typing import ArrayLike
 from jaxtyping import Array, Float, PRNGKeyArray
 from pipekit_ops import is_concrete
 
-from tracerax._src._validate import check_count, check_dimension
+from tracerax._src._validate import as_floating, check_count, check_dimension
 from tracerax._src.advect.turbulence import TurbulenceModel
 from tracerax._src.particles.state import ParticleState
 from tracerax._typing import ScalarLike
@@ -35,9 +35,8 @@ def _corner(value: Any, name: str) -> Float[Array, " axis"]:
     Raises:
         ValidationError: If it is not (2,) or (3,).
     """
-    point = jnp.asarray(value)
     # an integer point promotes to the default float; a float one keeps its dtype
-    point = point.astype(jnp.result_type(point, float))
+    point = as_floating(value)
     check_dimension(point.shape, name)
     if point.ndim != 1:
         raise ValidationError(f"'{name}' must be one point, got shape {point.shape}")

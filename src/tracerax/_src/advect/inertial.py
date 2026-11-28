@@ -8,13 +8,14 @@ from typing import Any
 
 import einx
 import equinox as eqx
+import geophysix.rotation
 import jax
 import jax.numpy as jnp
 import numpy as np
 from geophysix.earth import Ellipsoid
 from jax.typing import ArrayLike
 from jaxtyping import Array, Complex, Float
-from pipekit_array.arrays import stand_in
+from pipekit_array.arrays import check_values, stand_in
 from pipekit_ops import is_concrete
 
 from tracerax._src._sphere import check_lonlat, check_sphere
@@ -78,12 +79,10 @@ def _parameter(
         array = as_floating(value)
         if array.shape != ():
             raise ValidationError(f"'{name}' must be a scalar, got shape {array.shape}")
-        if not is_concrete(array):
-            return eqx.error_if(array, ~inside(array), message)
-        # on the host, which a trace around a constant does not reach
-        if not bool(inside(np.asarray(array))):
-            raise ValidationError(f"{message}, got {float(array)}")
-        return array
+        # on the host when concrete, which a trace around a constant does not reach
+        xp = np if is_concrete(array) else jnp
+        outside = ~inside(xp.asarray(array))
+        return check_values(array, outside, message, error=ValidationError)
 
     return convert
 
@@ -208,8 +207,7 @@ class SlowManifold(eqx.Module):
         else:
             assert self.earth is not None
             # f = 2Ω sin φ
-            rate = 2.0 * self.earth.rotation_rate
-            coriolis = rate * jnp.sin(jnp.deg2rad(position[:, 1]))
+            coriolis = geophysix.rotation.coriolis(position[:, 1], earth=self.earth)
 
         def at(velocity: Velocity) -> Derivatives:
             return velocity_derivatives(velocity, times, position, earth=self.earth)

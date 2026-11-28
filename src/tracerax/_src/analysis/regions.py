@@ -13,7 +13,7 @@ from functax.geometry import Points
 from functax.interp import Binning, TransposedStencil
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
-from pipekit_array.arrays import stand_in
+from pipekit_array.arrays import check_values, divide_or_nan, stand_in
 from pipekit_ops import is_concrete
 
 from tracerax._src._validate import check_count
@@ -95,7 +95,7 @@ class Regions(eqx.Module):
         else:
             array = array.astype(int)
             outside = (array < -1) | (array >= n_regions)
-            array = eqx.error_if(array, outside, message)
+            array = check_values(array, outside, message, error=ValidationError)
         self.cells = cells
         # a dtype without a sign has no −1 to give outside the cells
         self.labels = array.astype(int)
@@ -222,11 +222,8 @@ def _fractions(
     # N_i
     number = einx.sum("[particle] region", released)
     pairs = einx.dot("[particle] i, [particle] j -> i j", released, reached)
-    some = number > 0.0
-    # C_ij = (1/N_i) ∑_{p ∈ i} 1[p reached j]
-    safe = jnp.where(some, number, 1.0)
-    fraction = einx.divide("i j, i -> i j", pairs, safe)
-    return einx.where("i, i j, -> i j", some, fraction, jnp.nan)
+    # C_ij = (1/N_i) ∑_{p ∈ i} 1[p reached j], NaN for a region with no particle
+    return divide_or_nan(pairs, einx.rearrange("i -> i 1", number), jnp)
 
 
 def _released(

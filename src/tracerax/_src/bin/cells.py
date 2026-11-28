@@ -12,8 +12,10 @@ import numpy as np
 from functax.geometry import Axis, RectilinearGrid
 from functax.quad import cell_area
 from jaxtyping import Array, Bool, Float
+from pipekit_array.arrays import check_values
 from pipekit_ops import is_concrete
 
+from tracerax._src._validate import as_floating
 from tracerax.exceptions import ValidationError
 
 
@@ -37,17 +39,13 @@ def _as_edges(edges: Any) -> tuple[Any, ...]:
     """
     edges = tuple(edges)
     with host_axes(edges):
-        arrays = [jnp.asarray(edge) for edge in edges]
-        arrays = [array.astype(jnp.result_type(array, float)) for array in arrays]
+        arrays = [as_floating(edge) for edge in edges]
     checked = []
     for index, array in enumerate(arrays):
         if not is_concrete(array) and array.ndim == 1:
             ordered = jnp.all(jnp.diff(array) > 0.0) & jnp.all(jnp.isfinite(array))
-            array = eqx.error_if(
-                array,
-                ~ordered,
-                f"'edges[{index}]' must be finite and strictly increasing",
-            )
+            message = f"'edges[{index}]' must be finite and strictly increasing"
+            array = check_values(array, ~ordered, message, error=ValidationError)
         checked.append(array)
     return tuple(checked)
 
