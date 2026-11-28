@@ -7,8 +7,9 @@ import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Bool, Float
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import check_dimension, is_concrete
+from tracerax._src._validate import check_dimension
 from tracerax.exceptions import ValidationError
 
 

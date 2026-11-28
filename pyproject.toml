@@ -33,9 +33,11 @@ dependencies = [
     "integrix @ git+https://github.com/jejjohnson/integrix@v0.0.13",
     # The Earth's radius and great-circle distances; it brings pipekit-array.
     "geophysix>=0.0.10",
-    # The array helpers (safe_sqrt) and, through it, pipekit-ops; the same
-    # extras and tag as geophysix's, so the two resolve to one commit.
+    # The array helpers (safe_sqrt, stand_in, check_values); the same extras
+    # and tag as geophysix's, so the two resolve to one commit.
     "pipekit-array[numpy,compat]>=0.3.0",
+    # is_concrete; pipekit-array brings it, and it is imported here directly.
+    "pipekit-ops>=0.4.0",
 ]
 
 [project.urls]
@@ -94,6 +96,7 @@ default-groups = ["dev", "test"]
 geophysix = { git = "https://github.com/jejjohnson/geophysix", tag = "v0.0.10" }
 # The tag every package of the stack pins pipekit to (geophysix v0.0.10 included).
 pipekit-array = { git = "https://github.com/jejjohnson/pipekit", subdirectory = "packages/pipekit-array", tag = "pipekit-array-v0.3.0" }
+pipekit-ops = { git = "https://github.com/jejjohnson/pipekit", subdirectory = "packages/pipekit-ops", tag = "pipekit-array-v0.3.0" }
 
 [build-system]
 requires = ["hatchling"]

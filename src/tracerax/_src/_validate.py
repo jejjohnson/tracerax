@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import jax
-import jax.core
 import jax.numpy as jnp
 import numpy as np
 
@@ -16,7 +15,6 @@ __all__ = [
     "as_floating",
     "check_dimension",
     "check_count",
-    "is_concrete",
 ]
 
 
@@ -24,12 +22,6 @@ def as_floating(value: Any) -> jax.Array:
     """The value as a floating array: integers become JAX's default float."""
     array = jnp.asarray(value)
     return array.astype(jnp.result_type(array, float))
-
-
-def is_concrete(*values: Any) -> bool:
-    """Whether no leaf of the values is traced, so that they can be compared."""
-    leaves = jax.tree.leaves(values)
-    return not any(isinstance(leaf, jax.core.Tracer) for leaf in leaves)
 
 
 def check_dimension(shape: tuple[int, ...], name: str) -> None:

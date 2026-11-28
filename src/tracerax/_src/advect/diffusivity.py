@@ -12,8 +12,9 @@ from functax.geometry import RectilinearGrid
 from functax.interp import Interpolant, Linear, Policies
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import check_dimension, is_concrete
+from tracerax._src._validate import check_dimension
 from tracerax._src.velocity.gridded import fit_components, read_components
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError

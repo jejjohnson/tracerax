@@ -14,9 +14,10 @@ import numpy as np
 from geophysix.earth import Ellipsoid
 from jax.typing import ArrayLike
 from jaxtyping import Array, Complex, Float
+from pipekit_ops import is_concrete
 
 from tracerax._src._sphere import check_lonlat, check_sphere
-from tracerax._src._validate import as_floating, is_concrete
+from tracerax._src._validate import as_floating
 from tracerax._src.advect.masks import choose, stand_in
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.derivatives import Derivatives, velocity_derivatives

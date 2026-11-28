@@ -10,8 +10,8 @@ import numpy as np
 from functax.geometry import lonlat_to_unit, tangent_to_cartesian, unit_to_lonlat
 from geophysix.earth import Ellipsoid
 from jaxtyping import Array, Bool, Float
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import is_concrete
 from tracerax._src.velocity.uniform import Velocity
 from tracerax._typing import ScalarLike
 from tracerax.exceptions import ValidationError

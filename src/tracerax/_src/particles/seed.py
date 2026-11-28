@@ -11,8 +11,9 @@ import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float, PRNGKeyArray
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import check_count, check_dimension, is_concrete
+from tracerax._src._validate import check_count, check_dimension
 from tracerax._src.advect.turbulence import TurbulenceModel
 from tracerax._src.particles.state import ParticleState
 from tracerax._typing import ScalarLike

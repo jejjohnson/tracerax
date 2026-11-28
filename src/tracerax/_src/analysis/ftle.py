@@ -13,6 +13,7 @@ import numpy as np
 from functax.geometry import enu_basis
 from geophysix.earth import Ellipsoid
 from jaxtyping import Array, Float
+from pipekit_ops import is_concrete
 
 from tracerax._src._sphere import (
     check_sphere,
@@ -24,7 +25,6 @@ from tracerax._src._validate import (
     as_floating,
     check_count,
     check_dimension,
-    is_concrete,
 )
 from tracerax._src.advect.deterministic import RK4, Deterministic, check_explicit
 from tracerax._src.advect.loop import check_epoch, integrate

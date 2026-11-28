@@ -13,8 +13,9 @@ from functax.geometry import Points
 from functax.interp import Binning, TransposedStencil
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import check_count, is_concrete
+from tracerax._src._validate import check_count
 from tracerax._src.advect.masks import stand_in
 from tracerax._src.bin.cells import (
     Cells,

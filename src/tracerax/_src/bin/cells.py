@@ -12,8 +12,8 @@ import numpy as np
 from functax.geometry import Axis, RectilinearGrid
 from functax.quad import cell_area
 from jaxtyping import Array, Bool, Float
+from pipekit_ops import is_concrete
 
-from tracerax._src._validate import is_concrete
 from tracerax.exceptions import ValidationError
 
 
