@@ -1,6 +1,6 @@
 [project]
 name = "tracerax"
-version = "0.2.0"
+version = "0.2.1"
 description = "Lagrangian particles in JAX: advection, dispersion, deposits, residence and the analysis of runs."
 authors = [
     {name="J. Emmanuel Johnson", email="jemanjohnson34@gmail.com"},

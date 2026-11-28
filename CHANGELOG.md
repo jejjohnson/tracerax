@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/jejjohnson/tracerax/compare/v0.2.0...v0.2.1) (2026-11-28)
+
+
+### Miscellaneous
+
+* release 0.2.1 ([#86](https://github.com/jejjohnson/tracerax/issues/86)) ([de92db9](https://github.com/jejjohnson/tracerax/commit/de92db90d52250305aca97753cbffd93b3955f61))
+
 ## [0.2.0](https://github.com/jejjohnson/tracerax/compare/v0.1.0...v0.2.0) (2026-11-27)
 
 
