@@ -13,8 +13,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 from _closures import Homogeneous
-from _harness import assert_matches_oracle
 from pipekit_array.arrays import stand_in
+from pipekit_array.testing import assert_matches_oracle
 
 from tracerax._src.advect.masks import choose
 from tracerax.advect import (

@@ -10,10 +10,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _reference import CLOSURES, reference_values
-from _sampling import assert_uniform, assert_variance
 from hypothesis import given, strategies as st
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_traces,
+    assert_uniform,
+    assert_variance,
+)
 
 from tracerax import ValidationError
 from tracerax.advect import Langevin, TurbulenceModel, Walls, langevin_step

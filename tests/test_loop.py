@@ -13,17 +13,23 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from _closures import Homogeneous, LinearSigma
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _oracles import (
     SolidBodyRotation,
     taylor_variance,
     uniform_wind_position,
 )
 from _reference import CLOSURES, reference_values
-from _sampling import assert_mean, assert_uniform, assert_variance
 from functax.geometry import Axis, RectilinearGrid
 from functax.interp import Policies
 from integrix.adjoint import Checkpointed, Truncated
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_mean,
+    assert_traces,
+    assert_uniform,
+    assert_variance,
+)
 
 from tracerax import ValidationError
 from tracerax.advect import (

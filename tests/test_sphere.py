@@ -10,10 +10,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _oracles import SphereRotation
 from functax.geometry import Axis, RectilinearGrid
 from geophysix.earth import SPHERE, WGS84, great_circle_distance, sphere
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_traces,
+)
 
 from tracerax._src._sphere import to_lonlat
 from tracerax.advect import (

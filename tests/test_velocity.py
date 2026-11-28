@@ -11,10 +11,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _harness import assert_grad_matches_fd, assert_matches_oracle, assert_traces
 from _reference import reference_values
 from functax.geometry import Axis, Points, RectilinearGrid
 from functax.interp import Cubic, Linear, Policies
+from pipekit_array.testing import (
+    assert_grad_matches_fd,
+    assert_matches_oracle,
+    assert_traces,
+)
 
 from tracerax import ValidationError
 from tracerax.velocity import (

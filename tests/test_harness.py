@@ -1,9 +1,6 @@
-"""Each check passes on a right function and fails on a wrong one, and each
-reference is what its name says."""
+"""Each closed form and each reference run is what its name says."""
 
 from __future__ import annotations
-
-from typing import Any
 
 import diffrax as dfx
 import integrix.march
@@ -11,12 +8,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from _harness import (
-    assert_adjoint,
-    assert_grad_matches_fd,
-    assert_matches_oracle,
-    assert_traces,
-)
 from _oracles import (
     CosineDiffusivity,
     DoubleGyre,
@@ -31,179 +22,14 @@ from _reference import (
     fold,
     reference_values,
 )
-from _sampling import (
-    assert_mean,
-    assert_uniform,
-    assert_variance,
-    ks_critical_value,
-    ks_statistic,
-)
 from hypothesis import given, strategies as st
-from scipy import stats
+from pipekit_array.testing import (
+    assert_matches_oracle,
+    assert_uniform,
+)
 
 
 SIGMA, TIMESCALE = 0.5, 60.0
-
-
-def toy_step(
-    position: jax.Array, velocity: jax.Array, noise: jax.Array, step_size: Any
-) -> tuple[jax.Array, jax.Array]:
-    """One exact Ornstein–Uhlenbeck step: what a tracerax step looks like."""
-    # e^{−Δt/τ}
-    decay = jnp.exp(-step_size / TIMESCALE)
-    # v ← e^{−Δt/τ} v + σ √(1 − e^{−2Δt/τ}) ξ
-    moved = decay * velocity + SIGMA * jnp.sqrt(1.0 - decay**2) * noise
-    # x ← x + v Δt
-    return position + moved * step_size, moved
-
-
-def toy_run(size: int, step_size: float, num_steps: int) -> jax.Array:
-    """The displacements of ``size`` particles after ``num_steps`` toy steps."""
-    key_start, key_steps = jax.random.split(jax.random.key(0))
-    velocity = SIGMA * jax.random.normal(key_start, (size,))
-    noise = jax.random.normal(key_steps, (num_steps, size))
-
-    def body(carry: Any, draw: jax.Array) -> tuple[Any, None]:
-        return toy_step(*carry, draw, step_size), None
-
-    (position, _), _ = jax.lax.scan(body, (jnp.zeros(size), velocity), noise)
-    return position
-
-
-BATCH = 4
-BATCHED = tuple(
-    jax.random.normal(key, (BATCH, 3)) for key in jax.random.split(jax.random.key(1), 3)
-)
-
-
-class TestTheChecksOnAToyStep:
-    """One toy function passes every check."""
-
-    def test_oracle(self) -> None:
-        position, velocity, noise = (np.asarray(values) for values in BATCHED)
-        decay = np.exp(-5.0 / TIMESCALE)
-        expected = decay * velocity + SIGMA * np.sqrt(1.0 - decay**2) * noise
-        moved = toy_step(*BATCHED, 5.0)
-        # rounding of two ways to write the same sum
-        assert_matches_oracle(moved[1], expected, rtol=1e-14)
-        assert_matches_oracle(moved[0], position + 5.0 * expected, rtol=1e-13)
-
-    def test_traces(self) -> None:
-        assert_traces(lambda *state: toy_step(*state, 5.0), *BATCHED)
-
-    def test_gradient(self) -> None:
-        start = tuple(values[0] for values in BATCHED)
-        assert_grad_matches_fd(
-            lambda step_size: toy_step(*start, step_size), jnp.asarray(5.0)
-        )
-
-    def test_adjoint(self) -> None:
-        """A deposit and its transpose: the read at the same points."""
-        weights = jnp.asarray([[0.25, 0.75, 0.0], [0.0, 0.5, 0.5]])
-        assert_adjoint(
-            lambda values: weights @ values,
-            lambda mass: weights.T @ mass,
-            3,
-            2,
-            key=jax.random.key(0),
-        )
-
-    @pytest.mark.slow
-    def test_variance(self) -> None:
-        # Δt = τ/12: the first-order bias is under the bound 4 (2/N)^½ = 0.025
-        size, step_size, num_steps = 50_000, TIMESCALE / 12.0, 120
-        expected = taylor_variance(SIGMA, TIMESCALE, step_size * num_steps)
-        assert_variance(toy_run(size, step_size, num_steps), float(expected))
-
-
-class TestTheChecksRefuseAWrongFunction:
-    def test_oracle_names_the_worst_index(self) -> None:
-        with pytest.raises(AssertionError, match=r"worst at index \(1,\)"):
-            assert_matches_oracle([1.0, 9.0], [1.0, 2.0], rtol=1e-12)
-
-    def test_oracle_refuses_a_nan_on_one_side(self) -> None:
-        with pytest.raises(AssertionError, match="out of tolerance"):
-            assert_matches_oracle([1.0, np.nan], [1.0, 2.0], rtol=1.0)
-
-    def test_oracle_refuses_another_shape(self) -> None:
-        with pytest.raises(AssertionError, match="shape mismatch"):
-            assert_matches_oracle([1.0], [[1.0]], rtol=1.0)
-
-    def test_oracle_compares_masks_exactly(self) -> None:
-        with pytest.raises(AssertionError, match="out of tolerance"):
-            assert_matches_oracle([True, False], [True, True], rtol=10.0)
-
-    def test_traces_refuses_a_function_that_sees_the_trace(self) -> None:
-        def wrong(values: jax.Array) -> jax.Array:
-            return values if isinstance(values, jax.core.Tracer) else values + 1.0
-
-        with pytest.raises(AssertionError, match=r"jit\(fn\)"):
-            assert_traces(wrong, BATCHED[0])
-
-    def test_gradient_refuses_a_stopped_one(self) -> None:
-        with pytest.raises(AssertionError, match="out of tolerance"):
-            assert_grad_matches_fd(
-                lambda x: jnp.sum(jax.lax.stop_gradient(x) * x), jnp.array([0.3, 0.7])
-            )
-
-    def test_adjoint_refuses_a_scaled_one(self) -> None:
-        weights = jnp.asarray([[0.25, 0.75, 0.0], [0.0, 0.5, 0.5]])
-        with pytest.raises(AssertionError, match="dot-product"):
-            assert_adjoint(
-                lambda values: weights @ values,
-                lambda mass: 2.0 * weights.T @ mass,
-                3,
-                2,
-                key=jax.random.key(0),
-            )
-
-    def test_variance_refuses_a_step_that_is_too_long(self) -> None:
-        # Δt = τ: the measured bias of the scheme is 11 %
-        expected = taylor_variance(SIGMA, TIMESCALE, 600.0)
-        with pytest.raises(AssertionError, match="standard errors"):
-            assert_variance(toy_run(50_000, TIMESCALE, 10), float(expected))
-
-
-class TestStatistics:
-    def test_the_ks_statistic_is_scipys(self) -> None:
-        sample = np.random.default_rng(0).uniform(2.0, 5.0, 500)
-        expected = stats.kstest(sample, stats.uniform(2.0, 3.0).cdf).statistic
-        assert_matches_oracle(ks_statistic(sample, 2.0, 5.0), expected, rtol=1e-12)
-
-    def test_the_critical_value_is_the_limiting_law(self) -> None:
-        # the Kolmogorov law's upper tail, to its leading term: 1 % at 1e-3
-        expected = stats.kstwobign.isf(1e-3) / np.sqrt(10_000)
-        assert_matches_oracle(ks_critical_value(10_000, 1e-3), expected, rtol=1e-2)
-        assert round(ks_critical_value(1, 1e-3), 2) == 1.95
-
-    def test_uniform_refuses_another_law(self) -> None:
-        sample = np.random.default_rng(0).uniform(0.0, 1.0, 5_000) ** 1.2
-        with pytest.raises(AssertionError, match="not uniform"):
-            assert_uniform(sample, 0.0, 1.0)
-
-    def test_uniform_refuses_a_draw_outside(self) -> None:
-        sample = np.append(np.random.default_rng(0).uniform(0.0, 1.0, 99), 1.1)
-        with pytest.raises(AssertionError, match="1 of 100 draws outside"):
-            assert_uniform(sample, 0.0, 1.0)
-
-    def test_mean_refuses_a_shifted_one(self) -> None:
-        sample = np.random.default_rng(0).normal(0.2, 1.0, 1_000)
-        with pytest.raises(AssertionError, match="standard errors"):
-            assert_mean(sample, 0.0)
-
-    def test_mean_refuses_a_constant(self) -> None:
-        with pytest.raises(AssertionError, match="no spread"):
-            assert_mean(np.ones(100), 1.0)
-
-    @pytest.mark.parametrize("check", [assert_mean, assert_variance])
-    def test_a_nan_is_refused(self, check: Any) -> None:
-        with pytest.raises(AssertionError, match="not finite"):
-            check(np.append(np.zeros(99), np.nan), 1.0)
-
-    @pytest.mark.parametrize("check", [assert_mean, assert_variance])
-    def test_few_draws_are_refused(self, check: Any) -> None:
-        with pytest.raises(AssertionError, match="too few"):
-            check(np.zeros(5), 1.0)
 
 
 class TestClosedForms:
