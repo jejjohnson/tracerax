@@ -13,10 +13,10 @@ from functax.geometry import Points
 from functax.interp import Binning, TransposedStencil
 from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
+from pipekit_array.arrays import stand_in
 from pipekit_ops import is_concrete
 
 from tracerax._src._validate import check_count
-from tracerax._src.advect.masks import stand_in
 from tracerax._src.bin.cells import (
     Cells,
     cell_grid,
@@ -119,7 +119,7 @@ class Regions(eqx.Module):
         dtype = columns.dtype
         edges = edges_in(self.cells, dtype)
         # a particle outside has no cell: it is read in the first one
-        columns = stand_in(columns, inside, first_centre(edges, dtype))
+        columns = stand_in(columns, inside, jnp, reference=first_centre(edges, dtype))
         with host_axes(edges):
             grid = cell_grid(edges)
             # the nearest plan has one tap per particle: the cell between the edges

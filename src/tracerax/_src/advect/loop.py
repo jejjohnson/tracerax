@@ -15,11 +15,12 @@ from integrix.adjoint import Checkpointed, Truncated, scan_for
 from integrix.exceptions import ValidationError as IntegrixValidationError
 from integrix.march import count_steps, step_lengths
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
+from pipekit_array.arrays import stand_in
 from pipekit_ops import is_concrete
 
 from tracerax._src._validate import check_count
 from tracerax._src.advect.domain import Box
-from tracerax._src.advect.masks import choose, stand_in
+from tracerax._src.advect.masks import choose
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.particles.step import ParticleStep
 from tracerax._typing import ScalarLike
@@ -333,7 +334,7 @@ def integrate(
 
         # --- move ---
         before = (particles.position, particles.velocity)
-        read = stand_in(particles.position, moves, reference)
+        read = stand_in(particles.position, moves, jnp, reference=reference)
         moved = step(
             eqx.tree_at(_position, particles, read),
             start_time + direction * begin,

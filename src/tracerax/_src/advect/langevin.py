@@ -7,8 +7,9 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from pipekit_array.arrays import stand_in
 
-from tracerax._src.advect.masks import choose, mean_at_start, stand_in
+from tracerax._src.advect.masks import choose, mean_at_start
 from tracerax._src.advect.turbulence import TurbulenceModel
 from tracerax._src.advect.walls import Walls
 from tracerax._src.particles.state import ParticleState
@@ -116,7 +117,7 @@ def langevin_step(
         jnp.asarray(duration, dtype=dtype), (state.n_particles,)
     )
     moves = state.active & (durations > 0.0)
-    position = stand_in(state.position, moves)
+    position = stand_in(state.position, moves, jnp)
     # a particle that waits keeps finite gradients: √ has none at δ = 0
     elapsed = jnp.where(moves, durations, 1.0)
     waiting = jnp.zeros((), dtype=dtype)

@@ -7,9 +7,11 @@ from typing import Any
 import diffrax as dfx
 import equinox as eqx
 import integrix.march
+import jax.numpy as jnp
 from jaxtyping import Array, Float
+from pipekit_array.arrays import stand_in
 
-from tracerax._src.advect.masks import choose, stand_in
+from tracerax._src.advect.masks import choose
 from tracerax._src.particles.state import ParticleState
 from tracerax._src.velocity.uniform import Velocity
 from tracerax.exceptions import ValidationError
@@ -102,7 +104,7 @@ class Deterministic(eqx.Module):
         """
         del noise
         moves = state.active & (duration > 0.0)
-        position = stand_in(state.position, moves)
+        position = stand_in(state.position, moves, jnp)
         # h = d δ, one per particle
         moved = integrix.march.erk_step(
             self.solver, self.velocity, position, start, direction * duration
